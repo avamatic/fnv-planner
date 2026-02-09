@@ -5,7 +5,7 @@ A mod-aware character build planner and optimizer for Fallout: New Vegas. Treats
 
 ## Roadmap
 
-### Phase 1 — Foundation: Parse & Model Game Data
+### Phase 1 — Foundation: Parse & Model Game Data ✅
 
 Parse vanilla FNV game data (ESP/ESM plugin files) and build a clean data model
 that represents the full character build space.
@@ -13,71 +13,86 @@ that represents the full character build space.
 #### 1a. Binary ESM Reader ✅
 - Generic reader for the GRUP → Record → Subrecord binary format
 - Handles compressed records, lazy iteration over GRUPs
-- Files: `binary_reader.py`, `record_reader.py`, `records.py`
+- Files: `parser/binary_reader.py`, `parser/record_reader.py`, `models/records.py`
 
 #### 1b. Perk Parsing ✅
 - Parse PERK records: names, descriptions, requirements, playable flag, trait flag
 - Requirements include SPECIAL thresholds, skill levels, level gates, sex, OR groups
-- Files: `perk_parser.py`, `perk.py`, `constants.py`
+- Files: `parser/perk_parser.py`, `models/perk.py`, `models/constants.py`
 
 #### 1c. Items & Effects ✅
 - Parse MGEF (magic effects), ENCH (enchantments), ARMO, WEAP, ALCH, BOOK records
 - Stat-bonus resolution chain: item → enchantment → magic effect → actor value
 - Weapon enchantments (type 2) produce hostile effects; apparel (type 3) produce buffs
 - Skill books use a skill index → actor value mapping (index + 32)
-- Files: `effect_parser.py`, `effect_resolver.py`, `effect.py`, `item_parser.py`, `item.py`
+- Files: `parser/effect_parser.py`, `parser/effect_resolver.py`, `models/effect.py`, `parser/item_parser.py`, `models/item.py`
 
-#### 1d. Condition Parsing (CTDA) ⬚
+#### 1d. Game Settings & Derived Stats ✅
+- Parse GMST records for character formulas (skill points per level, initial skill values, max level, etc.)
+- Derived stat computation: carry weight, action points, skill points per level, poison/rad resist, companion nerve, unarmed damage, and more
+- All formulas driven by GMST values — no hard-coded vanilla constants
+- Files: `parser/gmst_parser.py`, `models/game_settings.py`, `models/derived_stats.py`
+
+#### 1e. Character Data Model ✅
+- `Character` dataclass: SPECIAL stats, skills, level, traits, perks, equipment
+- Equipment slots and stat aggregation from worn gear
+- Files: `models/character.py`
+
+#### 1f. Dependency Graph ✅
+- Perk → requirement edges (SPECIAL thresholds, skill levels, other perks, level)
+- CNF requirement evaluation: each perk's requirements are AND of OR-clauses
+- Trait enumeration, perk eligibility queries, available perk filtering
+- Files: `graph/dependency_graph.py`
+
+#### Condition Parsing (CTDA) ⬚
 - CTDA subrecords gate when effects apply (e.g., "only vs Robots", "only vs Power Armor")
 - Also used in perk requirements for complex conditions
 - Currently skipped in `effect_parser.py` — effects with conditions are parsed
   but the conditions themselves are discarded
-- Key condition functions discovered so far:
-  - `func 438` — GetIsCreatureType (e.g., param 6 = Robot)
-  - `func 182` — HasEquippedItemType (checks target's equipped armor)
 
-#### 1e. Character Data Model ⬚
-- `Character` / `Build` class: SPECIAL stats, skills, level, traits, perks, equipment
-- Derived stat formulas (carry weight, action points, skill points per level, etc.)
-- Equipment slots and stat aggregation from worn gear
-- (human note) Because we want this tool to be mod aware, it's important that we are extracting the formulas for SPECIAL available at character creation from the game     
-  files, and do not hard-code the formulas. We can explore together if that's reasonable and if so how to achieve it.
+### Phase 2 — Build Engine ✅
 
-#### 1f. Dependency Graph ⬚
-- Perk → requirement edges (SPECIAL thresholds, skill levels, other perks, level)
-- Equipment → stat effect edges
-- Used by the optimizer to determine valid perk orderings per level
+Logic layer between raw data models and the future UI/optimizer. Validates and simulates character builds level-by-level.
 
-### Phase 2 — Character Builder
-- Interactive character builder UI styled after the in-game interface
+#### 2a. Build Engine Core ✅
+- `BuildEngine` orchestrates `Character`, `compute_stats()`, and `DependencyGraph`
+- Per-level tracking via `LevelPlan` dataclass (skill point allocation + perk selection)
+- `BuildState` separates creation choices + level plans from engine (serializable, copyable)
+- Eager validation on mutation; holistic `validate()` returns all `BuildError`s across the build
+- Stats caching with directional invalidation (clear from mutated level upward)
+- Configurable perk intervals, skill caps, and SPECIAL budgets via `BuildConfig`
+- Files: `engine/build_engine.py`, `engine/build_config.py`
+
+### Phase 2b — Character Builder UI ⬚
+- Interactive character builder styled after the in-game interface
 - Calculate derived/secondary stats: DPS, DT, crit chance, crit bonus damage, carry weight, etc.
 - Real-time feedback as you assign SPECIAL points, pick traits, and select perks
 
-### Phase 3 — Optimizer
+### Phase 3 — Optimizer ⬚
 - Algorithm that finds optimal builds for user-defined goals (max crit, max DPS, best melee, max skills, etc.)
 - Generate a level-by-level plan for growing the character from 1 to max
 - Export the plan to a document with room for manual notes (e.g., "grab power armor from dead troopers near Hidden Valley at level 1")
 
-### Phase 4 — Beyond Fallout.esm
-#### 1d. Incorporation of DLC
-- (human note) Read the rest of the ESMs that ship with the game (e.g. HonestHearts.esm, GunRunnersArsenal.esm, OldWorldBlues.esm)
-- (human note) Understand mod-list: mod-list is a general term to describe how when values from different ESMs conflict, the value from the ESM with the lowest mod-list priority is chosen.
- 
-#### 1d. MO2 Integration
+### Phase 4 — Beyond Fallout.esm ⬚
+
+#### DLC Incorporation
+- Read the additional ESMs that ship with the game (HonestHearts.esm, GunRunnersArsenal.esm, OldWorldBlues.esm, etc.)
+- Handle mod-list priority: when values from different ESMs conflict, the last-loaded ESM wins
+
+#### MO2 Integration
 - Read MO2 mod folders to discover modded perks, traits, weapons, and stat changes
 - Merge modded data into the dependency graph alongside vanilla content
-- (human note) MO2 has a file called modlist.txt which explicitly defines the priority of different mod packages.
+- MO2's `modlist.txt` defines the load-order priority
 
 ### Stretch Goals
 - In-game companion mod that reads the planner output and guides you during gameplay
 - Item tracker mod for skill books, unique weapons/armor with optional waypoint guidance
-- (human note) Section for interesting tricks and tips in the GUI (e.g. locations/strategies for easy power scaling (e.g. looting dead brotherhood palidins north of Hidden Valley))
 
 ## Key Data Concepts
 
 ### Actor Values
 FNV uses integer indices for all character stats. Key ranges:
-- **SPECIAL**: 0–6 (Strength, Perception, Endurance, Charisma, Intelligence, Agility, Luck)
+- **SPECIAL**: 5–11 (Strength, Perception, Endurance, Charisma, Intelligence, Agility, Luck)
 - **Skills**: 32–45 (Barter, Big Guns, Energy Weapons, ... Speech, Unarmed)
 - **Derived**: 12 (AP), 14 (Crit Chance), 16 (Health), 20 (Rad Resist), 54 (Rads), etc.
 - **Survival needs** (Hardcore): 73 (Dehydration), 74 (Hunger), 75 (Sleep Deprivation)
@@ -104,9 +119,9 @@ Books use a skill_index field (skill = index + 32) instead of enchantments.
 ## Tech Stack
 - **Language**: Python 3.12+
 - **Game data parsing**: Custom ESP/ESM parser (Bethesda plugin format)
-- **Dependency graph**: networkx (or similar)
-- **Optimization**: scipy/numpy
-- **UI** (later): Web frontend (HTML/CSS/JS) with Python backend (FastAPI), styled like a Pip-Boy
+- **Dependency graph**: Custom CNF requirement evaluation
+- **Optimization** (planned): scipy/numpy
+- **UI** (planned): Web frontend (HTML/CSS/JS) with Python backend (FastAPI), styled like a Pip-Boy
 
 ## Project Structure
 ```
@@ -114,23 +129,34 @@ fnv-planner/
 ├── README.md
 ├── pyproject.toml
 ├── src/fnv_planner/
+│   ├── engine/
+│   │   ├── build_config.py       # BuildConfig: tuneable parameters
+│   │   └── build_engine.py       # LevelPlan, BuildState, BuildError, BuildEngine
+│   ├── graph/
+│   │   └── dependency_graph.py   # DependencyGraph: perk eligibility & trait queries
 │   ├── models/
-│   │   ├── constants.py       # ActorValue, enums, name mappings
-│   │   ├── effect.py          # StatEffect, MagicEffect, Enchantment
-│   │   ├── item.py            # Armor, Weapon, Consumable, Book
-│   │   ├── perk.py            # Perk, requirements
-│   │   └── records.py         # Subrecord, RecordHeader, Record, GroupHeader
+│   │   ├── character.py          # Character dataclass
+│   │   ├── constants.py          # ActorValue enum, index sets, name mappings
+│   │   ├── derived_stats.py      # DerivedStats formulas, compute_stats()
+│   │   ├── effect.py             # StatEffect, MagicEffect, Enchantment
+│   │   ├── game_settings.py      # GameSettings: GMST-driven formula parameters
+│   │   ├── item.py               # Armor, Weapon, Consumable, Book
+│   │   ├── perk.py               # Perk, requirement types
+│   │   └── records.py            # Subrecord, RecordHeader, Record, GroupHeader
 │   └── parser/
-│       ├── binary_reader.py   # Low-level typed binary reads
-│       ├── record_reader.py   # GRUP iteration and record extraction
-│       ├── perk_parser.py     # PERK record parsing
-│       ├── effect_parser.py   # MGEF + ENCH record parsing
-│       ├── effect_resolver.py # Item → enchantment → stat effect resolution
-│       └── item_parser.py     # ARMO, WEAP, ALCH, BOOK record parsing
+│       ├── binary_reader.py      # Low-level typed binary reads
+│       ├── record_reader.py      # GRUP iteration and record extraction
+│       ├── perk_parser.py        # PERK record parsing
+│       ├── gmst_parser.py        # GMST record parsing
+│       ├── effect_parser.py      # MGEF + ENCH record parsing
+│       ├── effect_resolver.py    # Item → enchantment → stat effect resolution
+│       └── item_parser.py        # ARMO, WEAP, ALCH, BOOK record parsing
 ├── scripts/
-│   ├── dump_perks.py          # CLI: list parsed perks
-│   └── dump_items.py          # CLI: list parsed items with stat effects
-└── tests/                     # 71 tests (pytest)
+│   ├── dump_character.py         # CLI: build and inspect a character snapshot
+│   ├── dump_graph.py             # CLI: list perks with their requirements
+│   ├── dump_items.py             # CLI: list parsed items with stat effects
+│   └── dump_perks.py             # CLI: list parsed perks
+└── tests/                        # 255 tests (pytest)
 ```
 
 ## Running
@@ -146,4 +172,6 @@ pytest
 python -m scripts.dump_perks --playable-only
 python -m scripts.dump_items --armor --playable-only
 python -m scripts.dump_items --weapons --consumables --books
+python -m scripts.dump_graph
+python -m scripts.dump_character
 ```
