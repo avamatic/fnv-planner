@@ -127,7 +127,7 @@ Books use a skill_index field (skill = index + 32) instead of enchantments.
 [+1 Luck]{Player}                  — permanent player buff (apparel)
 [-2 Health/s*10s]{Enemy}           — damage over time to enemy (weapon)
 [-50 Health]{Enemy}                — instant damage to enemy (weapon)
-[+5 Health/s*6s]{Player}           — temporary heal (consumable)
+[+5 Health*6s]{Player}             — temporary heal (consumable)
 ```
 
 ## Tech Stack
@@ -171,8 +171,9 @@ fnv-planner/
 │   ├── dump_graph.py             # CLI: list perks with their requirements
 │   ├── dump_items.py             # CLI: list parsed items with stat effects
 │   ├── dump_perks.py             # CLI: list parsed perks
+│   ├── audit_perks.py            # CLI: category audit (normal/trait/challenge/special/internal)
 │   └── prototype_ui.py           # Interactive CLI prototype (Build/Progression/Library)
-└── tests/                        # 277 tests (pytest)
+└── tests/                        # pytest suite (unit + integration)
 ```
 
 ## Running
@@ -192,6 +193,7 @@ python -m scripts.dump_items --weapons --consumables --books
 python -m scripts.dump_items --weapons --playable-only --format json
 python -m scripts.dump_graph
 python -m scripts.dump_character
+python -m scripts.audit_perks --check-wiki
 
 # Interactive CLI prototype for Build / Progression / Library flows
 python -m scripts.prototype_ui [--esm /path/to/FalloutNV.esm]
@@ -222,6 +224,7 @@ python -m scripts.dump_items \
 - Scripts support repeated `--esm` flags to load multiple plugins.
 - Input order is load order; later plugins override earlier ones.
 - Missing record groups in some plugins are tolerated (for example, DLC-only files with no `GMST` or `BOOK` group).
+- Explicit `--esm` paths are strict: all provided paths must exist.
 - With no `--esm`, scripts use this default vanilla order and skip missing files gracefully:
   - `FalloutNV.esm`
   - `DeadMoney.esm`
@@ -237,9 +240,12 @@ python -m scripts.dump_items \
 ### Perk Filtering Notes
 - `dump_perks --playable-only` excludes challenge reward perks by default.
 - Use `--include-challenge-perks` to include challenge rewards (for auditing/reference).
-- Challenge classification is data-driven from game files:
+- Perk categories are data-driven from game files:
   - CHAL↔PERK name linkage
   - challenge-family PERK editor IDs
+  - PERK trait/playable/hidden flags
+- `audit_perks` reports category counts: `normal`, `trait`, `challenge`, `special`, `internal`.
+- `special` is intentionally broad: visible non-selectable perks from data files (larger than the wiki’s curated 18-item special list).
 
 ### `dump_items` JSON mode
 - `--format json` emits structured output with selected categories under `categories`.
