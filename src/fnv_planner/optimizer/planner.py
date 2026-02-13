@@ -893,7 +893,15 @@ def _evaluate_unmet_requirements(
         int(av): max(0, int(count))
         for av, count in (skill_books_by_av or {}).items()
     }
-    for req in requirements:
+    ordered_requirements = sorted(
+        requirements,
+        key=lambda req: (
+            _requirement_deadline(req, target_level),
+            -int(req.priority),
+            req.reason or "",
+        ),
+    )
+    for req in ordered_requirements:
         deadline = _requirement_deadline(req, target_level)
         reason = req.reason or "unspecified reason"
         per_book = _effective_skill_book_points(
@@ -1085,7 +1093,15 @@ def _estimate_skill_books_usage_timeline(
     }
     used_by_level: dict[int, dict[int, int]] = {}
     points_by_level: dict[int, dict[int, int]] = {}
-    for req in requirements:
+    ordered_requirements = sorted(
+        requirements,
+        key=lambda req: (
+            _requirement_deadline(req, target_level),
+            -int(req.priority),
+            req.reason or "",
+        ),
+    )
+    for req in ordered_requirements:
         deadline = _requirement_deadline(req, target_level)
         stats = engine.stats_at(deadline)
         per_book = _effective_skill_book_points(

@@ -479,6 +479,42 @@ def test_plan_build_skill_book_points_follow_gmst_override():
     assert result.skill_book_points_by_level.get(2, {}).get(int(AV.SCIENCE), 0) == 5
 
 
+def test_plan_build_allocates_skill_books_to_earliest_deadline_first():
+    engine = _engine([])
+    result = plan_build(
+        engine,
+        GoalSpec(
+            target_level=10,
+            requirements=[
+                RequirementSpec(
+                    kind="actor_value",
+                    actor_value=int(AV.SCIENCE),
+                    operator=">=",
+                    value=100,
+                    by_level=10,
+                    priority=1000,
+                    reason="late high-priority science cap",
+                ),
+                RequirementSpec(
+                    kind="actor_value",
+                    actor_value=int(AV.SCIENCE),
+                    operator=">=",
+                    value=28,
+                    by_level=2,
+                    priority=100,
+                    reason="early science gate",
+                ),
+            ],
+            skill_books_by_av={int(AV.SCIENCE): 1},
+        ),
+        starting=_starting(target_level=10),
+        perks_by_id={},
+    )
+
+    assert result.skill_books_used_by_level.get(2, {}).get(int(AV.SCIENCE), 0) == 1
+    assert result.skill_books_used_by_level.get(10, {}).get(int(AV.SCIENCE), 0) == 0
+
+
 def test_plan_build_max_skills_raises_starting_intelligence():
     engine = _engine([])
     start = StartingConditions(
