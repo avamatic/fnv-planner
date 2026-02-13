@@ -8,6 +8,7 @@ import argparse
 from pathlib import Path
 
 from fnv_planner.parser.perk_parser import parse_all_perks
+from fnv_planner.parser.record_reader import read_grup
 from fnv_planner.parser.plugin_merge import (
     load_plugin_bytes,
     parse_records_merged,
@@ -43,6 +44,43 @@ def format_requirements(perk) -> str:
     return ", ".join(parts) if parts else "None"
 
 
+def _challenge_names_from_plugin(data: bytes) -> set[str]:
+    try:
+        records = read_grup(data, "CHAL")
+    except ValueError as exc:
+        if "GRUP 'CHAL' not found in plugin" in str(exc):
+            return set()
+        raise
+    names: set[str] = set()
+    for record in records:
+        full_name = ""
+        for sub in record.subrecords:
+            if sub.type == "FULL":
+                full_name = sub.data.rstrip(b"\x00").decode("utf-8", errors="replace")
+                break
+        if full_name:
+            names.add(full_name)
+    return names
+
+
+def _detect_challenge_perk_ids(plugin_datas: list[bytes], perks) -> set[int]:
+    chal_names: set[str] = set()
+    for data in plugin_datas:
+        chal_names |= _challenge_names_from_plugin(data)
+
+    ids: set[int] = set()
+    for perk in perks:
+        # Primary signal: PERK name is rewarded by a CHAL record.
+        if perk.name in chal_names:
+            ids.add(perk.form_id)
+            continue
+        # Secondary signal: challenge-family PERK editor IDs.
+        # This captures challenge reward perks whose CHAL title differs.
+        if "challenge" in perk.editor_id.lower():
+            ids.add(perk.form_id)
+    return ids
+
+
 def main():
     parser = argparse.ArgumentParser(description="Dump FNV perks from ESM")
     parser.add_argument("--esm", type=Path, action="append",
@@ -51,6 +89,8 @@ def main():
                         help="Only show playable perks")
     parser.add_argument("--traits-only", action="store_true",
                         help="Only show traits")
+    parser.add_argument("--include-challenge-perks", action="store_true",
+                        help="Include challenge reward perks in --playable-only output")
     args = parser.parse_args()
 
     try:
@@ -66,10 +106,16 @@ def main():
 
     plugin_datas = load_plugin_bytes(esm_paths)
     perks = parse_records_merged(plugin_datas, parse_all_perks, missing_group_ok=True)
+    challenge_perk_ids = _detect_challenge_perk_ids(plugin_datas, perks)
 
     # Filter
     if args.playable_only:
-        perks = [p for p in perks if p.is_playable and not p.is_trait]
+        perks = [
+            p for p in perks
+            if p.is_playable
+            and not p.is_trait
+            and (args.include_challenge_perks or p.form_id not in challenge_perk_ids)
+        ]
     elif args.traits_only:
         perks = [p for p in perks if p.is_trait]
 
@@ -79,6 +125,8 @@ def main():
     # Print
     for p in perks:
         tag = "[Trait] " if p.is_trait else ""
+        if p.form_id in challenge_perk_ids:
+            tag = f"{tag}[Challenge] "
         playable = "" if p.is_playable else " (non-playable)"
         reqs = format_requirements(p)
 

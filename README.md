@@ -186,6 +186,7 @@ pytest
 
 # Dump parsed data
 python -m scripts.dump_perks --playable-only
+python -m scripts.dump_perks --playable-only --include-challenge-perks
 python -m scripts.dump_items --armor --playable-only
 python -m scripts.dump_items --weapons --consumables --books
 python -m scripts.dump_items --weapons --playable-only --format json
@@ -232,6 +233,13 @@ python -m scripts.dump_items \
   - `ClassicPack.esm`
   - `MercenaryPack.esm`
   - `TribalPack.esm`
+
+### Perk Filtering Notes
+- `dump_perks --playable-only` excludes challenge reward perks by default.
+- Use `--include-challenge-perks` to include challenge rewards (for auditing/reference).
+- Challenge classification is data-driven from game files:
+  - CHAL↔PERK name linkage
+  - challenge-family PERK editor IDs
 
 ### `dump_items` JSON mode
 - `--format json` emits structured output with selected categories under `categories`.
