@@ -7,6 +7,7 @@ from pathlib import Path
 
 import pytest
 
+from fnv_planner.models.game_settings import GameSettings
 from fnv_planner.parser.item_parser import (
     parse_all_armors,
     parse_all_books,
@@ -62,6 +63,10 @@ def consumable_by_edid(consumables):
 @pytest.fixture(scope="module")
 def books(esm_data):
     return parse_all_books(esm_data)
+
+@pytest.fixture(scope="module")
+def gmst(esm_data):
+    return GameSettings.from_esm(esm_data)
 
 
 @pytest.fixture(scope="module")
@@ -150,18 +155,20 @@ def test_skill_book_count(books):
 
 # --- Specific BOOK tests ---
 
-def test_skill_book_has_stat_effect(books):
-    """Every skill book should produce a +1 stat effect."""
+def test_skill_book_has_stat_effect(books, gmst):
+    """Every skill book should produce a GMST-driven stat effect."""
+    book_points = gmst.skill_book_base_points()
     for b in books:
         if b.is_skill_book:
-            eff = b.stat_effect
+            eff = b.to_stat_effect(float(book_points))
             assert eff is not None, f"Skill book {b.editor_id} has no stat_effect"
-            assert eff.magnitude == 1.0
+            assert eff.magnitude == pytest.approx(float(book_points))
             assert eff.actor_value_name, f"Skill book {b.editor_id} has no AV name"
 
 
-def test_non_skill_book_has_no_effect(books):
+def test_non_skill_book_has_no_effect(books, gmst):
     """Non-skill books should have no stat_effect."""
+    book_points = float(gmst.skill_book_base_points())
     for b in books:
         if not b.is_skill_book:
-            assert b.stat_effect is None, f"Non-skill book {b.editor_id} has a stat_effect"
+            assert b.to_stat_effect(book_points) is None, f"Non-skill book {b.editor_id} has a stat_effect"

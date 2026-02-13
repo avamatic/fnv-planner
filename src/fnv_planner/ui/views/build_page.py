@@ -121,11 +121,17 @@ class BuildPage(Gtk.Box):
         special_frame.set_child(special_grid)
 
         self._special_values: dict[int, Gtk.Label] = {}
+        self._special_names: dict[int, Gtk.Label] = {}
         for idx, (av, name, _value) in enumerate(self._controller.special_rows()):
-            special_grid.attach(Gtk.Label(label=name, xalign=0), 0, idx, 1, 1)
+            name_label = Gtk.Label(label=name, xalign=0)
+            desc = self._controller.actor_value_description(int(av))
+            if desc:
+                name_label.set_tooltip_text(desc)
+            special_grid.attach(name_label, 0, idx, 1, 1)
             value_label = Gtk.Label(xalign=1)
             value_label.add_css_class("numeric")
             special_grid.attach(value_label, 1, idx, 1, 1)
+            self._special_names[av] = name_label
             self._special_values[av] = value_label
 
         traits_frame = Gtk.Frame(label="Traits")
@@ -275,16 +281,36 @@ class BuildPage(Gtk.Box):
                 f"HP {now.hit_points} | AP {now.action_points} | "
                 f"Carry {now.carry_weight:.0f} | Crit {now.crit_chance:.0f}"
             )
+            self._now_label.set_tooltip_text(
+                "\n".join(
+                    line
+                    for line in (
+                        self._controller.actor_value_description(16) and (
+                            f"Health: {self._controller.actor_value_description(16)}"
+                        ),
+                        self._controller.actor_value_description(12) and (
+                            f"Action Points: {self._controller.actor_value_description(12)}"
+                        ),
+                        self._controller.actor_value_description(14) and (
+                            f"Critical Chance: {self._controller.actor_value_description(14)}"
+                        ),
+                    )
+                    if line
+                )
+                or None
+            )
             self._target_label.set_text(
                 "Target: "
                 f"HP {target.hit_points} | AP {target.action_points} | "
                 f"Carry {target.carry_weight:.0f} | Crit {target.crit_chance:.0f}"
             )
+            self._target_label.set_tooltip_text(self._now_label.get_tooltip_text())
             self._delta_label.set_text(
                 "Delta: "
                 f"HP {delta['hit_points']:+.0f} | AP {delta['action_points']:+.0f} | "
                 f"Carry {delta['carry_weight']:+.0f} | Crit {delta['crit_chance']:+.0f}"
             )
+            self._delta_label.set_tooltip_text(self._now_label.get_tooltip_text())
             warning = self._controller.book_dependency_warning()
             self._book_dependency_label.set_text(
                 f"Book dependency: {warning}" if warning else "Book dependency: none."

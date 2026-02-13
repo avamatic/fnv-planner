@@ -19,6 +19,7 @@ from fnv_planner.parser.item_parser import (
     parse_all_consumables,
     parse_all_weapons,
 )
+from fnv_planner.models.game_settings import GameSettings
 from fnv_planner.parser.plugin_merge import (
     is_missing_grup_error,
     load_plugin_bytes,
@@ -317,6 +318,8 @@ def main():
     show_all = not (args.armor or args.weapons or args.consumables or args.books)
 
     plugin_datas = load_plugin_bytes(esm_paths)
+    gmst = GameSettings.from_plugins(plugin_datas)
+    book_points = gmst.skill_book_base_points()
     resolver = EffectResolver.from_plugins(plugin_datas)
     output: dict[str, object] = {
         "esm_paths": [str(p) for p in esm_paths],
@@ -461,6 +464,7 @@ def main():
                         "editor_id": b.editor_id,
                         "name": b.name,
                         "skill_name": b.skill_name,
+                        "skill_points_per_book": book_points,
                         "value": b.value,
                     }
                     for b in skill_books
@@ -469,7 +473,7 @@ def main():
         else:
             print("=== SKILL BOOKS ===")
             for b in skill_books:
-                print(f"{b.name} | {b.skill_name} (+1) | Value: {b.value}")
+                print(f"{b.name} | {b.skill_name} (+{book_points}) | Value: {b.value}")
             print(f"Total: {len(skill_books)} skill books (of {len(books)} books)\n")
 
     if args.format == "json":

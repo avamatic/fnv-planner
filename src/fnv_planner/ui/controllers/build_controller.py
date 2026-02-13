@@ -42,6 +42,7 @@ class BuildController:
     linked_spell_names_by_form: dict[int, str]
     linked_spell_stat_bonuses_by_form: dict[int, dict[int, float]]
     state: UiState
+    av_descriptions_by_av: dict[int, str] = field(default_factory=dict)
     current_level: int = 1
     on_change: Callable[[], None] | None = None
     requests: list[PriorityRequest] | None = None
@@ -49,6 +50,7 @@ class BuildController:
     _last_feasibility_message: str = "No priority requests set yet."
     _last_skill_books_used: dict[int, int] = field(default_factory=dict)
     _last_skill_books_used_by_level: dict[int, dict[int, int]] = field(default_factory=dict)
+    _last_skill_book_points_by_level: dict[int, dict[int, int]] = field(default_factory=dict)
     _last_perk_selection_reasons: dict[int, str] = field(default_factory=dict)
     _last_book_dependency_warning: str | None = None
 
@@ -110,6 +112,12 @@ class BuildController:
             for level, per_level in self._last_skill_books_used_by_level.items()
         }
 
+    def skill_book_points_by_level(self) -> dict[int, dict[int, int]]:
+        return {
+            int(level): {int(av): int(points) for av, points in per_level.items()}
+            for level, per_level in self._last_skill_book_points_by_level.items()
+        }
+
     def perk_reason_for_level(self, level: int) -> str | None:
         reason = self._last_perk_selection_reasons.get(int(level))
         if reason:
@@ -140,6 +148,12 @@ class BuildController:
         if actor_value in SKILL_INDICES:
             return self.engine.skill_cap
         return 100
+
+    def actor_value_description(self, actor_value: int) -> str | None:
+        desc = self.av_descriptions_by_av.get(int(actor_value))
+        if not desc:
+            return None
+        return desc
 
     @property
     def max_traits(self) -> int:
@@ -522,6 +536,10 @@ class BuildController:
         self._last_skill_books_used_by_level = {
             int(level): {int(av): int(count) for av, count in per_level.items()}
             for level, per_level in result.skill_books_used_by_level.items()
+        }
+        self._last_skill_book_points_by_level = {
+            int(level): {int(av): int(points) for av, points in per_level.items()}
+            for level, per_level in result.skill_book_points_by_level.items()
         }
         self._last_perk_selection_reasons = dict(result.perk_selection_reasons)
         self._last_book_dependency_warning = self._derive_book_dependency_warning(

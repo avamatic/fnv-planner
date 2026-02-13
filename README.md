@@ -80,7 +80,7 @@ Logic layer between raw data models and the future UI/optimizer. Validates and s
 - Screen-by-screen spec is in `docs/UI_SPEC.md`
 - Implementation strategy (architecture + Flatpak milestones) is in `docs/UI_IMPLEMENTATION_PLAN.md`
 
-### Phase 3 — Optimizer ⬜
+### Phase 3 — Optimizer 🟡
 - Algorithm that finds optimal builds for user-defined goals (max crit, max DPS, best melee, max skills, etc.)
 - Generate a level-by-level plan for growing the character from 1 to max
 - Export the plan to a document with room for manual notes (e.g., "grab power armor from dead troopers near Hidden Valley at level 1")
@@ -171,18 +171,24 @@ fnv-planner/
 │   │   ├── game_settings.py      # GameSettings: GMST-driven formula parameters
 │   │   ├── item.py               # Armor, Weapon, Consumable, Book
 │   │   ├── perk.py               # Perk, requirement types
-│   │   └── records.py            # Subrecord, RecordHeader, Record, GroupHeader
+│   │   ├── records.py            # Subrecord, RecordHeader, Record, GroupHeader
+│   │   └── spell.py              # Spell model used by weapon/apparel effect resolution
 │   ├── parser/
 │       ├── binary_reader.py      # Low-level typed binary reads
 │       ├── record_reader.py      # GRUP iteration and record extraction
+│       ├── plugin_merge.py       # Plugin stack loading and merge helpers
 │       ├── perk_parser.py        # PERK record parsing
+│       ├── perk_classification.py # Playable/trait/challenge/special classification rules
 │       ├── gmst_parser.py        # GMST record parsing
 │       ├── effect_parser.py      # MGEF + ENCH record parsing
 │       ├── effect_resolver.py    # Item → enchantment → stat effect resolution
-│       └── item_parser.py        # ARMO, WEAP, ALCH, BOOK record parsing
+│       ├── item_parser.py        # ARMO, WEAP, ALCH, BOOK record parsing
+│       ├── spell_parser.py       # SPEL parsing and item-linked spell extraction
+│       └── book_stats.py         # Skill-book copy counts and source categorization
 │   └── ui/
 │       ├── app.py                # GTK4/Adwaita app entrypoint
 │       ├── bootstrap.py          # Session bootstrap from plugin stack
+│       ├── state.py              # Shared UI session/application state
 │       ├── controllers/          # Build/Progression/Library/Graph UI controllers
 │       ├── views/                # GTK page widgets/tabs
 │       └── widgets/              # Reusable GTK components
@@ -193,6 +199,7 @@ fnv-planner/
 │   ├── dump_perks.py             # CLI: list parsed perks
 │   ├── audit_perks.py            # CLI: category audit (normal/trait/challenge/special/internal)
 │   ├── audit_skill_books.py      # CLI: skill-book copy counts + source buckets
+│   ├── plan_build.py             # CLI: build planning from goal/start JSON specs
 │   └── prototype_ui.py           # Interactive CLI prototype (Build/Progression/Library)
 └── tests/                        # pytest suite (unit + integration)
 ```
@@ -202,6 +209,11 @@ fnv-planner/
 ```bash
 # Install in editable mode
 pip install -e ".[dev]"
+
+# Optional UI runtime prerequisites (system packages; not installed by pip):
+# - GTK4
+# - Libadwaita
+# - PyGObject (gi bindings)
 
 # Run tests (requires FalloutNV.esm for integration tests)
 pytest

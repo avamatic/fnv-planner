@@ -22,10 +22,12 @@ class ProgressionController:
     active_level: int | None = None
     anytime_perk_labels: list[str] | None = None
     perk_reasons_by_level: dict[int, str] | None = None
+    av_descriptions_by_av: dict[int, str] | None = None
     skill_books_needed: int = 0
     skill_books_available: int = 0
     skill_book_rows_data: list[tuple[str, int, int]] | None = None
     skill_book_usage_by_level: dict[int, dict[int, int]] | None = None
+    skill_book_points_by_level: dict[int, dict[int, int]] | None = None
 
     def __post_init__(self) -> None:
         self._sync_bounds()
@@ -132,6 +134,7 @@ class ProgressionController:
         available: int,
         rows: list[tuple[str, int, int]],
         by_level: dict[int, dict[int, int]] | None = None,
+        points_by_level: dict[int, dict[int, int]] | None = None,
     ) -> None:
         self.skill_books_needed = max(0, int(needed))
         self.skill_books_available = max(0, int(available))
@@ -139,6 +142,10 @@ class ProgressionController:
         self.skill_book_usage_by_level = {
             int(level): {int(av): int(count) for av, count in per_level.items()}
             for level, per_level in (by_level or {}).items()
+        }
+        self.skill_book_points_by_level = {
+            int(level): {int(av): int(points) for av, points in per_level.items()}
+            for level, per_level in (points_by_level or {}).items()
         }
 
     def skill_books_summary(self) -> str:
@@ -186,3 +193,59 @@ class ProgressionController:
         delta_text = ", ".join(delta_parts) if delta_parts else "none this level"
         cum_text = ", ".join(cum_parts) if cum_parts else "none"
         return f"Skill books: {delta_text} (cumulative: {cum_text})"
+
+    def skill_books_between_levels_label(self, from_level: int, to_level: int) -> str | None:
+        if int(to_level) <= 1:
+            return None
+        count_delta = (self.skill_book_usage_by_level or {}).get(int(to_level), {})
+        point_delta = (self.skill_book_points_by_level or {}).get(int(to_level), {})
+        if not count_delta and not point_delta:
+            return None
+
+        parts: list[str] = []
+        for av in sorted(set(count_delta) | set(point_delta)):
+            name = ACTOR_VALUE_NAMES.get(int(av), f"AV{av}")
+            books = int(count_delta.get(int(av), 0))
+            points = int(point_delta.get(int(av), 0))
+            parts.append(f"{name} +{books} book(s) (+{points} skill)")
+        detail = ", ".join(parts) if parts else "none"
+        return f"Between L{int(from_level)} and L{int(to_level)}: {detail}"
+
+    def effective_skills_for_level(
+        self,
+        level: int,
+        base_skills: dict[int, int],
+    ) -> dict[int, int]:
+        adjusted = {int(av): int(value) for av, value in base_skills.items()}
+        points = self._cumulative_book_points_up_to_level(level)
+        for av, bonus in points.items():
+            if int(av) not in adjusted:
+                continue
+            adjusted[int(av)] = int(adjusted[int(av)]) + int(bonus)
+        return adjusted
+
+    def actor_value_description(self, actor_value: int) -> str | None:
+        mapping = self.av_descriptions_by_av or {}
+        desc = mapping.get(int(actor_value))
+        if not desc:
+            return None
+        return desc
+
+    def snapshot_stats_tooltip(self) -> str:
+        rows: list[str] = []
+        for av in (16, 12, 14):
+            name = ACTOR_VALUE_NAMES.get(int(av), f"AV{av}")
+            desc = self.actor_value_description(int(av))
+            if desc:
+                rows.append(f"{name}: {desc}")
+        return "\n".join(rows)
+
+    def _cumulative_book_points_up_to_level(self, level: int) -> dict[int, int]:
+        points_by_level = self.skill_book_points_by_level or {}
+        cumulative: dict[int, int] = {}
+        for lv in sorted(points_by_level):
+            if int(lv) > int(level):
+                break
+            for av, points in points_by_level[lv].items():
+                cumulative[int(av)] = cumulative.get(int(av), 0) + max(0, int(points))
+        return cumulative

@@ -4,14 +4,17 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
+import re
 
 from fnv_planner.engine.build_engine import BuildEngine
 from fnv_planner.engine.ui_model import BuildUiModel
 from fnv_planner.graph.dependency_graph import DependencyGraph
-from fnv_planner.models.constants import ActorValue
+from fnv_planner.models.constants import ACTOR_VALUE_NAMES, ActorValue
+from fnv_planner.models.avif import ActorValueInfo
 from fnv_planner.models.game_settings import GameSettings
 from fnv_planner.models.item import Armor, Weapon
 from fnv_planner.models.perk import Perk
+from fnv_planner.parser.avif_parser import parse_all_avifs
 from fnv_planner.parser.book_stats import (
     placed_skill_book_copies_by_actor_value,
     skill_books_by_actor_value,
@@ -52,6 +55,7 @@ class BuildSession:
     skill_books_by_av: dict[int, int]
     linked_spell_names_by_form: dict[int, str]
     linked_spell_stat_bonuses_by_form: dict[int, dict[int, float]]
+    av_descriptions_by_av: dict[int, str]
     armors: dict[int, Armor]
     weapons: dict[int, Weapon]
 
@@ -73,6 +77,33 @@ def _init_default_build(engine: BuildEngine) -> None:
     engine.set_sex(0)
     engine.set_tagged_skills({int(AV.GUNS), int(AV.LOCKPICK), int(AV.SPEECH)})
     engine.set_target_level(engine.max_level)
+
+
+def _normalize_token(text: str) -> str:
+    return re.sub(r"[^a-z0-9]+", "", text.lower())
+
+
+def _avif_descriptions_by_actor_value(avifs: list[ActorValueInfo]) -> dict[int, str]:
+    by_token: dict[str, str] = {}
+    for avif in avifs:
+        desc = (avif.description or "").strip()
+        if not desc:
+            continue
+        name_token = _normalize_token(avif.name)
+        if name_token:
+            by_token[name_token] = desc
+        if avif.editor_id.startswith("AV"):
+            edid_token = _normalize_token(avif.editor_id[2:])
+            if edid_token:
+                by_token[edid_token] = desc
+
+    out: dict[int, str] = {}
+    for av, name in ACTOR_VALUE_NAMES.items():
+        token = _normalize_token(name)
+        desc = by_token.get(token)
+        if desc:
+            out[int(av)] = desc
+    return out
 
 
 def bootstrap_default_session() -> tuple[BuildSession, UiState]:
@@ -98,6 +129,7 @@ def bootstrap_default_session() -> tuple[BuildSession, UiState]:
         skill_books_by_av: dict[int, int] = {}
         linked_spells: dict[int, str] = {}
         linked_spell_bonuses: dict[int, dict[int, float]] = {}
+        av_descriptions_by_av: dict[int, str] = {}
     else:
         gmst = GameSettings.from_plugins(plugin_datas)
         if not gmst._values:
@@ -127,6 +159,8 @@ def bootstrap_default_session() -> tuple[BuildSession, UiState]:
             skill_books_by_av = skill_books_by_actor_value(books)
         linked_spells = linked_spell_names_by_form(plugin_datas)
         linked_spell_bonuses = linked_spell_stat_bonuses_by_form(plugin_datas)
+        avifs = parse_records_merged(plugin_datas, parse_all_avifs, missing_group_ok=True)
+        av_descriptions_by_av = _avif_descriptions_by_actor_value(avifs)
 
     graph = DependencyGraph.build(perk_list)
     engine = BuildEngine.new_build(gmst, graph)
@@ -148,6 +182,7 @@ def bootstrap_default_session() -> tuple[BuildSession, UiState]:
         skill_books_by_av,
         linked_spells,
         linked_spell_bonuses,
+        av_descriptions_by_av,
         armors,
         weapons,
     ), state

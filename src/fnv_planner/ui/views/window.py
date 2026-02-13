@@ -32,6 +32,7 @@ class MainWindow(Adw.ApplicationWindow):
             linked_spell_names_by_form=session.linked_spell_names_by_form,
             linked_spell_stat_bonuses_by_form=session.linked_spell_stat_bonuses_by_form,
             state=state,
+            av_descriptions_by_av=session.av_descriptions_by_av,
             current_level=1,
         )
         self._progression_controller = ProgressionController(
@@ -39,6 +40,7 @@ class MainWindow(Adw.ApplicationWindow):
             ui_model=session.ui_model,
             perks=session.perks,
             state=state,
+            av_descriptions_by_av=session.av_descriptions_by_av,
         )
         self._library_controller = LibraryController(
             engine=session.engine,
@@ -87,6 +89,7 @@ class MainWindow(Adw.ApplicationWindow):
             self._build_controller.total_skill_books(),
             self._build_controller.skill_book_rows(),
             self._build_controller.skill_book_usage_by_level(),
+            self._build_controller.skill_book_points_by_level(),
         )
         self._progression_page = ProgressionPage(self._progression_controller)
         self._library_page = LibraryPage(self._library_controller)
@@ -146,6 +149,7 @@ class MainWindow(Adw.ApplicationWindow):
             self._build_controller.total_skill_books(),
             self._build_controller.skill_book_rows(),
             self._build_controller.skill_book_usage_by_level(),
+            self._build_controller.skill_book_points_by_level(),
         )
         self._build_page.refresh()
         self._progression_page.refresh()

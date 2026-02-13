@@ -26,6 +26,12 @@ jobs:
         run: |
           pytest -q tests/test_plugin_merge.py tests/test_perk_classification.py
 
+      - name: Mechanics Guardrails
+        run: |
+          python -m scripts.check_mechanics_matrix_coverage
+          python -m scripts.check_mechanics_literals
+          python -m scripts.audit_mechanics_sources
+
       - name: Game Data Smoke (if available)
         run: |
           ESM="$HOME/.local/share/Steam/steamapps/common/Fallout New Vegas/Data/FalloutNV.esm"

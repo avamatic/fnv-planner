@@ -48,6 +48,11 @@ def test_defaults_max_level():
     assert gs.get_int("iMaxCharacterLevel", 0) == 50
 
 
+def test_defaults_skill_book_base_points():
+    gs = GameSettings.defaults()
+    assert gs.skill_book_base_points() == 3
+
+
 def test_get_float_missing_returns_default():
     gs = GameSettings(_values={})
     assert gs.get_float("nonexistent", 42.0) == pytest.approx(42.0)
@@ -141,6 +146,17 @@ def test_skill_with_high_luck():
     stats = compute_stats(c, gmst)
     # Each skill: 2 + 5*2 + ceil(10*0.5) = 2 + 10 + 5 = 17
     assert stats.skills[AV.BARTER] == 17
+
+
+def test_skill_base_uses_gmst_per_skill_value():
+    """Per-skill base should come from fAVDSkill*Base GMST keys."""
+    c = Character()
+    gmst = GameSettings(_values={"fAVDSkillScienceBase": 6.0})
+    stats = compute_stats(c, gmst)
+    # Science: 6 + INT(5)*2 + ceil(LCK(5)*0.5=2.5->3) = 19
+    assert stats.skills[AV.SCIENCE] == 19
+    # Barter still uses default base fallback 2 -> 15
+    assert stats.skills[AV.BARTER] == 15
 
 
 # --- Equipment bonuses ---

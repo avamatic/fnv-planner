@@ -32,6 +32,8 @@ _VANILLA_DEFAULTS: dict[str, int | float | str] = {
     "fAVDSkillLuckBonusMult": 0.5,
     # Tag skill bonus
     "fAVDTagSkillBonus": 15.0,
+    # Base skill-book points in vanilla FNV.
+    "fBookPerkBonus": 3.0,
     # Level cap
     "iMaxCharacterLevel": 50,
     # Skill points per level: base + floor(INT * 0.5)
@@ -62,6 +64,11 @@ class GameSettings:
         if val is None:
             return default
         return int(val)
+
+    def skill_book_base_points(self) -> int:
+        """Base points granted per skill book (GMST-driven)."""
+        val = self.get_float("fBookPerkBonus", 3.0)
+        return max(1, int(round(val)))
 
     @classmethod
     def from_esm(cls, data: bytes) -> "GameSettings":

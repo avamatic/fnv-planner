@@ -24,6 +24,24 @@ from fnv_planner.models.game_settings import GameSettings
 from fnv_planner.models.item import Armor, Weapon
 
 
+_SKILL_BASE_GMST_BY_AV: dict[int, str] = {
+    int(ActorValue.BARTER): "fAVDSkillBarterBase",
+    int(ActorValue.BIG_GUNS): "fAVDSkillBigGunsBase",
+    int(ActorValue.ENERGY_WEAPONS): "fAVDSkillEnergyWeaponsBase",
+    int(ActorValue.EXPLOSIVES): "fAVDSkillExplosivesBase",
+    int(ActorValue.LOCKPICK): "fAVDSkillLockpickBase",
+    int(ActorValue.MEDICINE): "fAVDSkillMedicineBase",
+    int(ActorValue.MELEE_WEAPONS): "fAVDSkillMeleeWeaponsBase",
+    int(ActorValue.REPAIR): "fAVDSkillRepairBase",
+    int(ActorValue.SCIENCE): "fAVDSkillScienceBase",
+    int(ActorValue.GUNS): "fAVDSkillSmallGunsBase",
+    int(ActorValue.SNEAK): "fAVDSkillSneakBase",
+    int(ActorValue.SPEECH): "fAVDSkillSpeechBase",
+    int(ActorValue.SURVIVAL): "fAVDSkillSurvivalBase",
+    int(ActorValue.UNARMED): "fAVDSkillUnarmedBase",
+}
+
+
 class DerivedStats:
     """Computes derived stats from SPECIAL/skills using GMST-driven formulas."""
 
@@ -78,11 +96,19 @@ class DerivedStats:
         base = self._gmst.get_int("iLevelUpSkillPointsBase", 11)
         return base + math.floor(intelligence * 0.5)
 
-    def initial_skill(self, governing_attr: int, luck: int) -> int:
-        """Initial skill value = 2 + governing_attr * primary_mult + ceil(luck * luck_mult)."""
+    def skill_base(self, skill_av: int) -> float:
+        """Base contribution for a skill actor value from GMST."""
+        key = _SKILL_BASE_GMST_BY_AV.get(int(skill_av))
+        if key is None:
+            return 2.0
+        return self._gmst.get_float(key, 2.0)
+
+    def initial_skill(self, governing_attr: int, luck: int, skill_av: int | None = None) -> int:
+        """Initial skill value from GMST base + SPECIAL/luck multipliers."""
         primary_mult = self._gmst.get_float("fAVDSkillPrimaryBonusMult", 2.0)
         luck_mult = self._gmst.get_float("fAVDSkillLuckBonusMult", 0.5)
-        return int(2 + governing_attr * primary_mult + math.ceil(luck * luck_mult))
+        base = self.skill_base(skill_av) if skill_av is not None else 2.0
+        return int(base + governing_attr * primary_mult + math.ceil(luck * luck_mult))
 
     def tag_bonus(self) -> int:
         """Bonus added to tagged skills."""
@@ -219,7 +245,7 @@ def compute_stats(
         gov_av = governing_attribute[skill_av]
         gov_val = effective_special.get(gov_av, 5)
 
-        base = calc.initial_skill(gov_val, luck)
+        base = calc.initial_skill(gov_val, luck, skill_av=skill_av)
         if skill_av in character.tagged_skills:
             base += tag_bonus
         base += character.skill_points_spent.get(skill_av, 0)

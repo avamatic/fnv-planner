@@ -304,6 +304,8 @@ def test_plan_build_uses_skill_books_for_skill_actor_value_requirement():
     assert result.success is True
     assert result.unmet_requirements == []
     assert result.skill_books_used.get(int(AV.SCIENCE), 0) == 1
+    assert result.skill_books_used_by_level.get(2, {}).get(int(AV.SCIENCE), 0) == 1
+    assert result.skill_book_points_by_level.get(2, {}).get(int(AV.SCIENCE), 0) == 3
 
 
 def test_plan_build_comprehension_doubles_skill_book_value():
@@ -355,6 +357,39 @@ def test_plan_build_comprehension_doubles_skill_book_value():
     assert result.success is True
     assert result.state.level_plans[2].perk == comprehension.form_id
     assert result.skill_books_used.get(int(AV.SCIENCE), 0) == 1
+    assert result.skill_books_used_by_level.get(2, {}).get(int(AV.SCIENCE), 0) == 1
+    assert result.skill_book_points_by_level.get(2, {}).get(int(AV.SCIENCE), 0) == 4
+
+
+def test_plan_build_skill_book_points_follow_gmst_override():
+    engine = BuildEngine(
+        GameSettings(_values={"fBookPerkBonus": 5.0}),
+        DependencyGraph.build([]),
+    )
+    result = plan_build(
+        engine,
+        GoalSpec(
+            target_level=2,
+            requirements=[
+                RequirementSpec(
+                    kind="actor_value",
+                    actor_value=int(AV.SCIENCE),
+                    operator=">=",
+                    value=30,
+                    by_level=2,
+                    priority=500,
+                    reason="science check with modded book points",
+                )
+            ],
+            skill_books_by_av={int(AV.SCIENCE): 1},
+        ),
+        starting=_starting(target_level=2),
+        perks_by_id={},
+    )
+
+    assert result.success is True
+    assert result.skill_books_used.get(int(AV.SCIENCE), 0) == 1
+    assert result.skill_book_points_by_level.get(2, {}).get(int(AV.SCIENCE), 0) == 5
 
 
 def test_plan_build_max_skills_raises_starting_intelligence():
@@ -441,13 +476,11 @@ def test_plan_build_max_skills_accounts_for_skilled_trait_bonus():
         linked_spell_names_by_form={0x010133AD: "Skilled Bonus (+5 to skills)"},
     )
 
-    assert without_trait.success is False
-    assert with_trait.success is False
-    without_unmet = " | ".join(without_trait.unmet_requirements)
-    with_unmet = " | ".join(with_trait.unmet_requirements)
-    assert without_unmet != with_unmet
-    assert "32:81" in without_unmet
-    assert "32:81" not in with_unmet
+    assert without_trait.success is True
+    assert with_trait.success is True
+    without_books = sum(int(v) for v in without_trait.skill_books_used.values())
+    with_books = sum(int(v) for v in with_trait.skill_books_used.values())
+    assert with_books < without_books
 
 
 def test_plan_build_can_satisfy_experience_multiplier_requirement():

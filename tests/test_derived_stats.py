@@ -2,6 +2,7 @@
 
 import pytest
 
+from fnv_planner.models.constants import ActorValue
 from fnv_planner.models.derived_stats import DerivedStats
 from fnv_planner.models.game_settings import GameSettings
 
@@ -201,3 +202,10 @@ def test_custom_gmst_overrides_formula():
     calc = DerivedStats(modded)
     # STR 5: 200 + 5*15 = 275
     assert calc.carry_weight(strength=5) == pytest.approx(275.0)
+
+
+def test_custom_gmst_overrides_skill_base_for_specific_skill():
+    modded = GameSettings(_values={"fAVDSkillScienceBase": 6.0})
+    calc = DerivedStats(modded)
+    # Science: base(6) + INT(5)*2 + ceil(LCK(5)*0.5=2.5->3) = 19
+    assert calc.initial_skill(governing_attr=5, luck=5, skill_av=int(ActorValue.SCIENCE)) == 19

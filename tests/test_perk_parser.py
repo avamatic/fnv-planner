@@ -158,6 +158,11 @@ def test_here_and_now(perk_by_edid):
 
 def test_comprehension_has_entry_point_effect(perk_by_edid):
     p = perk_by_edid["Comprehension"]
+    assert p.min_level == 4
+    reqs = {r.name: r for r in p.skill_requirements}
+    assert "Intelligence" in reqs
+    assert reqs["Intelligence"].operator == ">="
+    assert reqs["Intelligence"].value == 4
     assert len(p.entry_point_effects) >= 1
     assert any(
         b.entry_point == 2 and any(len(payload) == 3 and payload[0] == 11 for payload in b.data_payloads)

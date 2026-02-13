@@ -82,8 +82,26 @@ class ProgressionPage(Gtk.Box):
         active_level = self._controller.active_level
         prev_skills: dict[int, int] | None = None
         for snap in rows:
+            if snap.level > 1:
+                between = self._controller.skill_books_between_levels_label(snap.level - 1, snap.level)
+                if between:
+                    event_row = Gtk.ListBoxRow()
+                    event_row.set_selectable(False)
+                    event_row.set_activatable(False)
+                    event_card = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=2)
+                    event_card.set_margin_top(4)
+                    event_card.set_margin_bottom(4)
+                    event_card.set_margin_start(8)
+                    event_card.set_margin_end(8)
+                    event_line = Gtk.Label(label=between, xalign=0)
+                    event_line.set_wrap(True)
+                    event_card.append(event_line)
+                    event_row.set_child(event_card)
+                    self._progression_list.append(event_row)
+
             perk_label = self._controller.perk_label_for_level(snap.level, snap.perk_id)
             allocation_label = self._controller.skill_allocation_label_for_level(snap.level)
+            effective_skills = self._controller.effective_skills_for_level(snap.level, snap.stats.skills)
 
             row = Gtk.ListBoxRow()
             row.set_selectable(True)
@@ -117,21 +135,24 @@ class ProgressionPage(Gtk.Box):
             skills_line.set_wrap(True)
             card.append(skills_line)
 
-            books_line = Gtk.Label(
-                label=self._controller.skill_books_timeline_label_for_level(snap.level),
-                xalign=0,
-            )
-            books_line.set_wrap(True)
-            card.append(books_line)
-
             skills_markup = self._skills_absolute_markup(
-                snap.stats.skills,
+                effective_skills,
                 prev_skills,
             )
             absolute_skills = Gtk.Label(xalign=0)
             absolute_skills.set_use_markup(True)
             absolute_skills.set_wrap(True)
             absolute_skills.set_markup(f"Skills: {skills_markup}")
+            skill_tooltips: list[str] = []
+            for av in sorted(effective_skills):
+                if av < 32 or av > 45:
+                    continue
+                desc = self._controller.actor_value_description(int(av))
+                if not desc:
+                    continue
+                name = ACTOR_VALUE_NAMES.get(int(av), f"AV{av}")
+                skill_tooltips.append(f"{name}: {desc}")
+            absolute_skills.set_tooltip_text("\n".join(skill_tooltips) or None)
             card.append(absolute_skills)
 
             stats_line = Gtk.Label(
@@ -142,6 +163,7 @@ class ProgressionPage(Gtk.Box):
                 xalign=0,
             )
             stats_line.set_wrap(True)
+            stats_line.set_tooltip_text(self._controller.snapshot_stats_tooltip() or None)
             card.append(stats_line)
 
             row.set_child(card)
@@ -150,7 +172,7 @@ class ProgressionPage(Gtk.Box):
 
             if active_level is not None and snap.level == active_level:
                 self._progression_list.select_row(row)
-            prev_skills = dict(snap.stats.skills)
+            prev_skills = dict(effective_skills)
 
     def _render_anytime_perks(self) -> None:
         self._clear_list(self._anytime_list)

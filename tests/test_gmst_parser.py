@@ -151,3 +151,9 @@ def test_skill_points_base(gmst_values):
     # iLevelUpSkillPointsBase controls this.
     assert isinstance(gmst_values["iLevelUpSkillPointsBase"], int)
     assert gmst_values["iLevelUpSkillPointsBase"] > 0
+
+
+@pytestmark_esm
+def test_skill_book_base_points_gmst(gmst_values):
+    """fBookPerkBonus defines base points granted by skill books."""
+    assert gmst_values["fBookPerkBonus"] == pytest.approx(3.0)

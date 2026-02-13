@@ -7,7 +7,10 @@ testable in isolation from effect resolution.
 
 from dataclasses import dataclass, field
 
-from fnv_planner.models.constants import ACTOR_VALUE_NAMES, SKILL_INDEX_TO_ACTOR_VALUE
+from fnv_planner.models.constants import (
+    ACTOR_VALUE_NAMES,
+    SKILL_INDEX_TO_ACTOR_VALUE,
+)
 from fnv_planner.models.effect import EnchantmentEffect, StatEffect
 
 
@@ -112,14 +115,13 @@ class Book:
             return None
         return ACTOR_VALUE_NAMES.get(av, f"AV{av}")
 
-    @property
-    def stat_effect(self) -> StatEffect | None:
-        """Skill books give +1 to their skill (engine-hardcoded)."""
+    def to_stat_effect(self, skill_points: float) -> StatEffect | None:
+        """Build a StatEffect for this skill book with caller-provided points."""
         av = self.skill_actor_value
         if av is None:
             return None
         return StatEffect(
             actor_value=av,
             actor_value_name=ACTOR_VALUE_NAMES.get(av, f"AV{av}"),
-            magnitude=1.0,
+            magnitude=float(skill_points),
         )

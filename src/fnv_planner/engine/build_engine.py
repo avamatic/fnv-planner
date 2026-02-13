@@ -186,6 +186,11 @@ class BuildEngine:
     def skill_cap(self) -> int:
         return self._config.skill_cap
 
+    @property
+    def skill_book_base_points(self) -> int:
+        """Base points per skill book from loaded GMST values."""
+        return self._gmst.skill_book_base_points()
+
     # --- Cache helpers -----------------------------------------------------
 
     def _invalidate_from(self, level: int) -> None:

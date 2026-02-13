@@ -27,6 +27,7 @@ class PlanResult:
     unmet_requirements: list[str] = field(default_factory=list)
     skill_books_used: dict[int, int] = field(default_factory=dict)
     skill_books_used_by_level: dict[int, dict[int, int]] = field(default_factory=dict)
+    skill_book_points_by_level: dict[int, dict[int, int]] = field(default_factory=dict)
     perk_selection_reasons: dict[int, str] = field(default_factory=dict)
     messages: list[str] = field(default_factory=list)
 
@@ -244,7 +245,7 @@ def plan_build(
     if errors:
         messages.extend(f"L{err.level} [{err.category}] {err.message}" for err in errors)
 
-    skill_books_used_by_level = _estimate_skill_books_usage_timeline(
+    skill_books_used_by_level, skill_book_points_by_level = _estimate_skill_books_usage_timeline(
         engine,
         requirements=requirements,
         target_level=target,
@@ -259,6 +260,7 @@ def plan_build(
         unmet_requirements=unmet_requirements,
         skill_books_used=_aggregate_skill_books_used_by_av(skill_books_used_by_level),
         skill_books_used_by_level=skill_books_used_by_level,
+        skill_book_points_by_level=skill_book_points_by_level,
         perk_selection_reasons=perk_selection_reasons,
         messages=messages,
     )
@@ -1016,13 +1018,19 @@ def _estimate_skill_books_usage_timeline(
     target_level: int,
     skill_books_by_av: dict[int, int] | None = None,
     inferred_effects_by_id: dict[int, InferredSkillEffects] | None = None,
-) -> dict[int, dict[int, int]]:
-    """Estimate skill-book usage grouped by requirement deadline level."""
+) -> tuple[dict[int, dict[int, int]], dict[int, dict[int, int]]]:
+    """Estimate skill-book usage grouped by requirement deadline level.
+
+    Returns:
+    - count timeline: level -> AV -> number of books consumed before that level-up
+    - point timeline: level -> AV -> effective skill points gained from those books
+    """
     books = {
         int(av): max(0, int(count))
         for av, count in (skill_books_by_av or {}).items()
     }
     used_by_level: dict[int, dict[int, int]] = {}
+    points_by_level: dict[int, dict[int, int]] = {}
     for req in requirements:
         deadline = _requirement_deadline(req, target_level)
         stats = engine.stats_at(deadline)
@@ -1050,6 +1058,10 @@ def _estimate_skill_books_usage_timeline(
                 continue
             used_by_level.setdefault(int(deadline), {})
             used_by_level[int(deadline)][av] = used_by_level[int(deadline)].get(av, 0) + take
+            points_by_level.setdefault(int(deadline), {})
+            points_by_level[int(deadline)][av] = (
+                points_by_level[int(deadline)].get(av, 0) + (take * per_book)
+            )
             books[av] = books.get(av, 0) - take
             continue
 
@@ -1068,8 +1080,12 @@ def _estimate_skill_books_usage_timeline(
                 used_by_level[int(deadline)][int(av)] = (
                     used_by_level[int(deadline)].get(int(av), 0) + take
                 )
+                points_by_level.setdefault(int(deadline), {})
+                points_by_level[int(deadline)][int(av)] = (
+                    points_by_level[int(deadline)].get(int(av), 0) + (take * per_book)
+                )
                 books[int(av)] = books.get(int(av), 0) - take
-    return used_by_level
+    return used_by_level, points_by_level
 
 
 def _aggregate_skill_books_used_by_av(
@@ -1097,8 +1113,9 @@ def _effective_skill_book_points(
     deadline: int,
     inferred_effects_by_id: dict[int, InferredSkillEffects] | None,
 ) -> int:
+    base_points = max(1, int(engine.skill_book_base_points))
     if not inferred_effects_by_id:
-        return 1
+        return base_points
     selected = _selected_perk_ids_by_deadline(engine, deadline)
     bonus = 0
     for perk_id in selected:
@@ -1106,7 +1123,7 @@ def _effective_skill_book_points(
         if effects is None:
             continue
         bonus += max(0, int(effects.skill_book_points_bonus))
-    return max(1, 1 + bonus)
+    return max(base_points, base_points + bonus)
 
 
 def _effective_flat_skill_bonuses(
