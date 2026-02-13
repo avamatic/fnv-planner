@@ -236,6 +236,9 @@ python -m scripts.prototype_ui [--esm /path/to/FalloutNV.esm]
 # GTK/Adwaita UI app (GNOME desktop session required)
 python -m fnv_planner.ui.app
 
+# Headless GUI smoke (no manual loop; uses Broadway virtual display)
+python -m scripts.smoke_ui --timeout 2.0
+
 # Plugin stack mode (repeat --esm in load order; last wins)
 python -m scripts.dump_items \
   --esm "/path/to/FalloutNV.esm" \
