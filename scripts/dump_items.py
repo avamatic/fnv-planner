@@ -9,6 +9,7 @@ If no category flags are given, all categories are shown.
 
 import argparse
 from pathlib import Path
+from collections import Counter
 
 from fnv_planner.parser.effect_resolver import EffectResolver
 from fnv_planner.parser.item_parser import (
@@ -59,6 +60,8 @@ _WEAPON_VARIANT_TOKENS = (
     "raul",
     "cass",
     "arcade",
+    "lily",
+    "companion",
     "eyebot",
     "chaineffect",
     "1hp",
@@ -73,6 +76,7 @@ _WEAPON_NON_PLAYER_TOKENS = (
     "mistergutsy",
     "robobrain",
     "protectron",
+    "securitron",
     "eyebot",
     "spit",
     "flame",
@@ -98,6 +102,67 @@ _WEAPON_NON_PLAYER_TOKENS = (
 def _looks_like_weapon_variant(editor_id: str) -> bool:
     lowered = editor_id.lower()
     return any(token in lowered for token in _WEAPON_VARIANT_TOKENS)
+
+
+_WEAPON_VARIANT_LABELS = (
+    ("lily", "Lily"),
+    ("boone", "Boone"),
+    ("veronica", "Veronica"),
+    ("raul", "Raul"),
+    ("cass", "Cass"),
+    ("arcade", "Arcade"),
+    ("companion", "Companion"),
+    ("npc", "NPC"),
+    ("upgrade", "Upgraded"),
+    ("alwayscrit", "Always-Crit"),
+    ("weak", "Weak"),
+    ("broken", "Broken"),
+    ("debug", "Debug"),
+    ("missing", "Missing"),
+    ("test", "Test"),
+)
+
+
+def _weapon_variant_label(editor_id: str) -> str | None:
+    lowered = editor_id.lower()
+    labels = [label for token, label in _WEAPON_VARIANT_LABELS if token in lowered]
+    if not labels:
+        return None
+    unique_labels = []
+    for label in labels:
+        if label not in unique_labels:
+            unique_labels.append(label)
+    return ", ".join(unique_labels)
+
+
+def _build_weapon_disambiguation_labels(weapons) -> dict[int, str]:
+    """Return per-weapon labels for duplicated names.
+
+    For names that appear multiple times, prefer human labels (Lily, Weak, etc.).
+    If labels collide or are missing, fall back to editor IDs so each row is unique.
+    """
+    by_name: dict[str, list] = {}
+    for w in weapons:
+        by_name.setdefault(w.name, []).append(w)
+
+    labels: dict[int, str] = {}
+    for name, entries in by_name.items():
+        if len(entries) < 2:
+            continue
+
+        proposed = {}
+        for w in entries:
+            proposed[w.form_id] = _weapon_variant_label(w.editor_id)
+
+        # Count non-empty proposed labels to detect collisions.
+        counts = Counter(label for label in proposed.values() if label)
+        for w in entries:
+            label = proposed[w.form_id]
+            if not label or counts.get(label, 0) > 1:
+                label = w.editor_id
+            labels[w.form_id] = label
+
+    return labels
 
 
 def _looks_like_non_player_weapon(editor_id: str) -> bool:
@@ -164,6 +229,8 @@ def main():
                         help="Hide obvious NPC/companion/helper weapon variants")
     parser.add_argument("--dedupe", action="store_true",
                         help="Collapse duplicate weapon rows by displayed stats")
+    parser.add_argument("--include-companion-variants", action="store_true",
+                        help="Include companion/NPC weapon variants in --playable-only output")
     args = parser.parse_args()
 
     if not args.esm.exists():
@@ -197,17 +264,29 @@ def main():
         for w in weapons:
             resolver.resolve_weapon(w)
         if args.playable_only:
-            weapons = [w for w in weapons if _is_player_facing_weapon(w)]
+            if args.include_companion_variants:
+                weapons = [w for w in weapons if not _looks_like_non_player_weapon(w.editor_id)]
+            else:
+                weapons = [w for w in weapons if _is_player_facing_weapon(w)]
         if args.exclude_variants:
             weapons = [w for w in weapons if not _looks_like_weapon_variant(w.editor_id)]
         if args.dedupe:
             weapons = _dedupe_weapons_for_display(weapons)
         weapons.sort(key=lambda w: w.name)
+        disambiguation_labels = _build_weapon_disambiguation_labels(weapons)
 
         print("=== WEAPONS ===")
         for w in weapons:
             effects = format_effects(w.stat_effects)
-            print(f"{w.name} | Dmg: {w.damage} | Value: {w.value} | Weight: {w.weight:g}")
+            display_name = w.name
+            disambiguation_label = disambiguation_labels.get(w.form_id)
+            if disambiguation_label:
+                display_name = f"{display_name} [{disambiguation_label}]"
+            else:
+                variant_label = _weapon_variant_label(w.editor_id)
+                if variant_label:
+                    display_name = f"{display_name} [{variant_label} variant]"
+            print(f"{display_name} | Dmg: {w.damage} | Value: {w.value} | Weight: {w.weight:g}")
             if args.verbose:
                 print(f"  form_id={w.form_id:#010x} editor_id={w.editor_id}")
             if effects:
