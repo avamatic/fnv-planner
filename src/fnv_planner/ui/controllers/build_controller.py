@@ -2,6 +2,7 @@
 
 import re
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Callable
 
 from fnv_planner.engine.build_engine import BuildEngine
@@ -61,6 +62,7 @@ class BuildController:
     _last_perk_selection_reasons: dict[int, str] = field(default_factory=dict)
     _last_book_dependency_warning: str | None = None
     _inferred_effects_by_id: dict[int, object] = field(default_factory=dict)
+    quick_perk_preset_path: Path = Path("config/quick_perks.txt")
 
     def __post_init__(self) -> None:
         if self.requests is None:
@@ -418,6 +420,62 @@ class BuildController:
         self._recompute_plan()
         self._sync_state()
         self._notify_changed()
+
+    def apply_quick_perk_preset(self) -> tuple[bool, str | None]:
+        path = self.quick_perk_preset_path
+        if not path.exists():
+            return False, f"Quick perk preset not found: {path}"
+
+        try:
+            lines = path.read_text().splitlines()
+        except OSError as exc:
+            return False, f"Could not read quick perk preset: {exc}"
+
+        tokens = [
+            line.strip()
+            for line in lines
+            if line.strip() and not line.strip().startswith("#")
+        ]
+        if not tokens:
+            self.set_perk_requests(set())
+            return True, "Quick perk preset is empty; cleared perk requests."
+
+        by_edid = {p.editor_id.lower(): int(p.form_id) for p in self.perks.values()}
+        by_name = {p.name.lower(): int(p.form_id) for p in self.perks.values()}
+
+        selected: set[int] = set()
+        unresolved: list[str] = []
+        for tok in tokens:
+            raw = tok.strip()
+            lowered = raw.lower()
+            perk_id: int | None = None
+            if lowered in by_edid:
+                perk_id = by_edid[lowered]
+            elif lowered in by_name:
+                perk_id = by_name[lowered]
+            elif lowered.startswith("0x"):
+                try:
+                    perk_id = int(lowered, 16)
+                except ValueError:
+                    perk_id = None
+            elif lowered.isdigit():
+                perk_id = int(lowered, 10)
+
+            if perk_id is None or perk_id not in self.perks:
+                unresolved.append(raw)
+                continue
+            selected.add(int(perk_id))
+
+        self.set_perk_requests(selected)
+
+        if unresolved:
+            return (
+                False,
+                "Applied quick perk preset with unresolved entries: "
+                + ", ".join(unresolved[:5])
+                + (" ..." if len(unresolved) > 5 else ""),
+            )
+        return True, f"Applied quick perk preset ({len(selected)} perks)."
 
     def add_trait_request_by_query(self, query: str) -> tuple[bool, str | None]:
         text = query.strip().lower()

@@ -81,6 +81,9 @@ class BuildPage(Gtk.Box):
         add_perk = Gtk.Button(label="Open Perk Picker")
         add_perk.connect("clicked", self._on_add_perk_request)
         perk_row.append(add_perk)
+        quick_perk = Gtk.Button(label="Apply Quick Perk List")
+        quick_perk.connect("clicked", self._on_apply_quick_perk_preset)
+        perk_row.append(quick_perk)
         primary_col.append(perk_row)
 
         trait_row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
@@ -474,6 +477,13 @@ class BuildPage(Gtk.Box):
             selected=self._controller.selected_trait_ids(),
             on_apply=self._apply_trait_picker_selection,
         )
+
+    def _on_apply_quick_perk_preset(self, _button: Gtk.Button) -> None:
+        ok, message = self._controller.apply_quick_perk_preset()
+        self._status_label.set_text("" if ok else (message or "Could not apply quick perk list"))
+        if ok and message:
+            self._status_label.set_text(message)
+        self.refresh()
 
     def _on_add_tagged_skill_request(self, _button: Gtk.Button) -> None:
         items = [(av, name) for av, name in self._controller.tagged_skill_options()]

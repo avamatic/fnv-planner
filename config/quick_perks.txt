@@ -1,0 +1,9 @@
+# Quick perk preset for Build tab "Apply Quick Perk List" button.
+# One entry per line. Accepted formats:
+# - Editor ID (recommended), e.g. Educated
+# - Exact perk name, e.g. Better Criticals
+# - Form ID, e.g. 0x00031DBA
+#
+# Example:
+# Educated
+# Comprehension

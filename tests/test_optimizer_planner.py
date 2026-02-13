@@ -225,6 +225,57 @@ def test_plan_build_uses_special_implant_for_special_gate():
     assert result.state.level_plans[2].perk == required.form_id
 
 
+def test_plan_build_prefers_implant_over_intense_training_for_special_gate():
+    implant = _perk(
+        form_id=0x9201,
+        name="Strength Implant",
+        description="An implant that increases your Strength by 1.",
+        min_level=2,
+        is_playable=False,
+    )
+    intense = _perk(
+        form_id=0x9202,
+        name="Intense Training",
+        editor_id="IntenseTraining",
+        min_level=2,
+        ranks=10,
+        entry_point_effects=[
+            PerkEntryPointEffect(
+                entry_point=0,
+                rank_index=0,
+                priority=0,
+                data_payloads=[bytes.fromhex("b238000065cdcdcd")],
+            )
+        ],
+    )
+    required = _perk(
+        form_id=0x9203,
+        name="Strength Gate",
+        min_level=4,
+        skill_requirements=[
+            SkillRequirement(
+                actor_value=int(AV.STRENGTH),
+                name="Strength",
+                operator=">=",
+                value=8,
+            )
+        ],
+    )
+    engine = _engine([implant, intense, required])
+    result = plan_build(
+        engine,
+        GoalSpec(required_perks=[required.form_id], target_level=4),
+        starting=_starting(target_level=4),
+        perks_by_id={p.form_id: p for p in [implant, intense, required]},
+    )
+
+    assert result.success is True
+    assert result.missing_required_perks == []
+    assert result.state.creation_special_points.get(int(AV.STRENGTH), 0) == 1
+    assert result.state.level_plans[2].perk != intense.form_id
+    assert result.state.level_plans[4].perk == required.form_id
+
+
 def test_plan_build_satisfies_actor_value_requirement_by_deadline():
     engine = _engine([])
     result = plan_build(

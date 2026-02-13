@@ -746,6 +746,32 @@ def _allocate_implant_special_points(
         engine.allocate_special_points(level, allocation)
 
 
+def _has_available_implant_for_special_target(
+    engine: BuildEngine,
+    *,
+    level: int,
+    target_av: int,
+    perks_by_id: dict[int, Perk],
+) -> bool:
+    """True if an unselected SPECIAL implant can provide +1 to target AV now."""
+    implant_targets = _detect_special_implants(perks_by_id)
+    if not implant_targets:
+        return False
+    selected = _selected_perk_ids_by_deadline(engine, max(1, int(level)))
+    unmet_level = max(2, int(level))
+    for implant_id, implant_target in implant_targets.items():
+        if int(implant_target) != int(target_av):
+            continue
+        if int(implant_id) in selected:
+            continue
+        # Reuse graph requirement checks (e.g., END gating via NVSE-like conditions).
+        unmet = engine.unmet_requirements_for_perk(int(implant_id), level=unmet_level)
+        if unmet:
+            continue
+        return True
+    return False
+
+
 def _best_special_to_raise(
     engine: BuildEngine,
     *,
@@ -1273,7 +1299,12 @@ def _choose_requirement_support_perk(
             )
             if target is not None:
                 current = int(engine.stats_at(level).effective_special.get(target, 0))
-                if current < 10:
+                if current < 10 and not _has_available_implant_for_special_target(
+                    engine,
+                    level=level,
+                    target_av=int(target),
+                    perks_by_id=perks_by_id,
+                ):
                     score += float(10 - current)
                     special_target = target
                     reasons.append("Helps satisfy SPECIAL/perk gates.")
@@ -1445,6 +1476,15 @@ def _score_max_skills_perk_action(
             target = int(ActorValue.INTELLIGENCE)
         current = int(trial.stats_at(level).effective_special.get(target, 0))
         if current < 10:
+            if _has_available_implant_for_special_target(
+                engine,
+                level=level,
+                target_av=int(target),
+                perks_by_id=perks_by_id,
+            ):
+                reasons.append("Implant can provide this SPECIAL point; preserve perk slot.")
+                reason = " ".join(reasons) if reasons else "Highest projected max-skills gain."
+                return score, special_target, reason
             try:
                 trial.allocate_special_points(level, {target: 1})
                 after = trial.stats_at(target_level).skills
