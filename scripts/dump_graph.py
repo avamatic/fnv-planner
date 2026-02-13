@@ -46,8 +46,24 @@ def main():
 
     print(f"Loading ESM: {args.esm}")
     data = args.esm.read_bytes()
-    gmst = GameSettings.from_esm(data)
-    perks = parse_all_perks(data)
+    try:
+        gmst = GameSettings.from_esm(data)
+    except ValueError as exc:
+        if "GRUP 'GMST' not found in plugin" in str(exc):
+            print("Warning: GMST GRUP not found; using vanilla defaults for derived stats.")
+            gmst = GameSettings.defaults()
+        else:
+            raise
+
+    try:
+        perks = parse_all_perks(data)
+    except ValueError as exc:
+        if "GRUP 'PERK' not found in plugin" in str(exc):
+            print("Warning: PERK GRUP not found; graph will be empty.")
+            perks = []
+        else:
+            raise
+
     graph = DependencyGraph.build(perks)
 
     perk_by_edid = {p.editor_id: p for p in perks}

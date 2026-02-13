@@ -63,28 +63,46 @@ def main():
     if args.esm.exists():
         print(f"Loading ESM: {args.esm}")
         data = args.esm.read_bytes()
-        gmst = GameSettings.from_esm(data)
+        try:
+            gmst = GameSettings.from_esm(data)
+        except ValueError as exc:
+            if "GRUP 'GMST' not found in plugin" in str(exc):
+                print("Warning: GMST GRUP not found; using vanilla defaults.")
+                gmst = GameSettings.defaults()
+            else:
+                raise
 
         # Resolve equipment if ESM is present
         from fnv_planner.parser.effect_resolver import EffectResolver
         from fnv_planner.parser.item_parser import parse_all_armors, parse_all_weapons
 
-        resolver = EffectResolver.from_esm(data)
-        armor_list = parse_all_armors(data)
-        weapon_list = parse_all_weapons(data)
-        for a in armor_list:
-            resolver.resolve_armor(a)
-        for w in weapon_list:
-            resolver.resolve_weapon(w)
-        armors = {a.form_id: a for a in armor_list}
-        weapons = {w.form_id: w for w in weapon_list}
+        armor_list = []
+        weapon_list = []
+        try:
+            resolver = EffectResolver.from_esm(data)
+            armor_list = parse_all_armors(data)
+            weapon_list = parse_all_weapons(data)
+            for a in armor_list:
+                resolver.resolve_armor(a)
+            for w in weapon_list:
+                resolver.resolve_weapon(w)
+            armors = {a.form_id: a for a in armor_list}
+            weapons = {w.form_id: w for w in weapon_list}
+        except ValueError as exc:
+            if "not found in plugin" in str(exc):
+                print("Warning: required item/effect GRUP missing; continuing without equipment.")
+                armors = {}
+                weapons = {}
+            else:
+                raise
 
         # Equip Lucky Shades (+1 Luck, +3 Perception)
-        armor_by_edid = {a.editor_id: a for a in armor_list}
-        if "UniqueGlassesLuckyShades" in armor_by_edid:
-            shades = armor_by_edid["UniqueGlassesLuckyShades"]
-            courier.equipment[0] = shades.form_id
-            print(f"Equipped: {shades.name} (form_id: {shades.form_id:#x})")
+        if armor_list:
+            armor_by_edid = {a.editor_id: a for a in armor_list}
+            if "UniqueGlassesLuckyShades" in armor_by_edid:
+                shades = armor_by_edid["UniqueGlassesLuckyShades"]
+                courier.equipment[0] = shades.form_id
+                print(f"Equipped: {shades.name} (form_id: {shades.form_id:#x})")
     else:
         print("No ESM found — using vanilla GMST defaults, no equipment")
         gmst = GameSettings.defaults()

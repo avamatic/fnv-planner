@@ -95,9 +95,15 @@ class EffectResolver:
             # Apparel enchantments and consumables provide buffs → positive magnitude
             if is_hostile:
                 magnitude = -magnitude
+            actor_value_name = ACTOR_VALUE_NAMES.get(av)
+            if actor_value_name is None:
+                # Fallback: use MGEF display name when AV mapping is incomplete.
+                actor_value_name = mgef.name.strip() if mgef.name else ""
+                if not actor_value_name:
+                    actor_value_name = f"AV{av}"
             result.append(StatEffect(
                 actor_value=av,
-                actor_value_name=ACTOR_VALUE_NAMES.get(av, f"AV{av}"),
+                actor_value_name=actor_value_name,
                 magnitude=magnitude,
                 duration=eff.duration,
                 is_hostile=is_hostile,

@@ -8,6 +8,7 @@ If no category flags are given, all categories are shown.
 """
 
 import argparse
+import json
 from pathlib import Path
 from collections import Counter
 
@@ -28,11 +29,14 @@ DEFAULT_ESM = Path(
 def format_effects(effects) -> str:
     """Format stat effects with duration and context (enemy vs player).
 
-    Format: [(effect/s)*(effect_time*s)]{Enemy/Player}
+    Format:
+    - Timed hostile effects: [effect/s*duration]{Enemy}
+    - Timed player effects: [effect*duration]{Player}
+    - Instant/permanent: [effect]{Enemy/Player}
     - DoT: [-2 Health/s*10s]{Enemy}
     - Instant: [-50 Health]{Enemy}
     - Permanent buff: [+1 Luck]{Player}
-    - Temporary buff: [+5 Health/s*6s]{Player}
+    - Temporary buff: [+1 Intelligence*240s]{Player}
     """
     if not effects:
         return ""
@@ -42,8 +46,12 @@ def format_effects(effects) -> str:
         target = "Enemy" if e.is_hostile else "Player"
 
         if e.duration > 0:
-            # Over time: show rate per second and duration
-            effect_str = f"[{e.magnitude:+g} {e.actor_value_name}/s*{e.duration}s]{{{target}}}"
+            # Hostile timed effects in weapon enchantments are per-second DoTs/debuffs.
+            if e.is_hostile:
+                effect_str = f"[{e.magnitude:+g} {e.actor_value_name}/s*{e.duration}s]{{{target}}}"
+            else:
+                # Consumable/apparel timed effects are temporary modifiers, not per-second rates.
+                effect_str = f"[{e.magnitude:+g} {e.actor_value_name}*{e.duration}s]{{{target}}}"
         else:
             # Instant/permanent: no duration suffix
             effect_str = f"[{e.magnitude:+g} {e.actor_value_name}]{{{target}}}"
@@ -51,6 +59,16 @@ def format_effects(effects) -> str:
         parts.append(effect_str)
 
     return ", ".join(parts)
+
+
+def _effect_to_dict(e) -> dict:
+    return {
+        "actor_value_name": e.actor_value_name,
+        "magnitude": e.magnitude,
+        "duration": e.duration,
+        "is_hostile": e.is_hostile,
+        "is_conditional": getattr(e, "is_conditional", False),
+    }
 
 
 _WEAPON_VARIANT_TOKENS = (
@@ -69,6 +87,7 @@ _WEAPON_VARIANT_TOKENS = (
 )
 
 _WEAPON_NON_PLAYER_TOKENS = (
+    "securitron",
     "turret",
     "vertibird",
     "sentrybot",
@@ -76,22 +95,23 @@ _WEAPON_NON_PLAYER_TOKENS = (
     "mistergutsy",
     "robobrain",
     "protectron",
-    "securitron",
     "eyebot",
-    "spit",
-    "flame",
-    "shriek",
-    "trap",
     "satcom",
     "gojira",
     "queenant",
     "behemoth",
     "stranger",
-    "oliver",
     "rorschach",
-    "camera",
-    "dummy",
-    "missile",
+    "gastrap",
+    "spitmissile",
+    "lakelurk",
+    "sporeplant",
+    "bloatfly",
+    "firegecko",
+    "fireant",
+    "rexbite",
+    "archimedesi",
+    "dlc05alien",
     "1hp",
     "2hl",
     "2hr",
@@ -167,16 +187,34 @@ def _build_weapon_disambiguation_labels(weapons) -> dict[int, str]:
 
 def _looks_like_non_player_weapon(editor_id: str) -> bool:
     lowered = editor_id.lower()
+    if lowered.startswith(("ms04", "trap")):
+        return True
     return any(token in lowered for token in _WEAPON_NON_PLAYER_TOKENS)
 
 
 def _is_player_facing_weapon(w) -> bool:
+    # Prefer parsed WEAP DNAM flags when available.
+    if getattr(w, "is_non_playable_flagged", False):
+        return False
+    if getattr(w, "is_embedded_weapon", False):
+        return False
     eid = w.editor_id.lower()
     if _looks_like_weapon_variant(eid) or _looks_like_non_player_weapon(eid):
         return False
     # In FalloutNV.esm, player-facing weapons are consistently EDIDs containing
     # "weap". Header non-playable flags are not reliable for WEAP records.
     return "weap" in eid or eid == "fists"
+
+
+def _weapon_classification(w) -> dict[str, bool]:
+    return {
+        "record_flag_playable": bool(w.is_playable),
+        "non_playable_flagged": bool(getattr(w, "is_non_playable_flagged", False)),
+        "embedded_weapon_flagged": bool(getattr(w, "is_embedded_weapon", False)),
+        "is_variant": _looks_like_weapon_variant(w.editor_id),
+        "is_non_player": _looks_like_non_player_weapon(w.editor_id),
+        "is_player_facing": _is_player_facing_weapon(w),
+    }
 
 
 def _weapon_dump_key(w) -> tuple:
@@ -213,6 +251,27 @@ def _dedupe_weapons_for_display(weapons):
     return deduped
 
 
+def _weapon_display_name(w, disambiguation_labels: dict[int, str]) -> str:
+    display_name = w.name
+    disambiguation_label = disambiguation_labels.get(w.form_id)
+    if disambiguation_label:
+        return f"{display_name} [{disambiguation_label}]"
+    variant_label = _weapon_variant_label(w.editor_id)
+    if variant_label:
+        return f"{display_name} [{variant_label} variant]"
+    return display_name
+
+
+def _safe_parse(parser_fn, data: bytes, label: str):
+    try:
+        return parser_fn(data)
+    except ValueError as exc:
+        if "GRUP" in str(exc) and "not found in plugin" in str(exc):
+            print(f"Warning: GRUP for {label} not found in plugin; skipping.")
+            return []
+        raise
+
+
 def main():
     parser = argparse.ArgumentParser(description="Dump FNV items from ESM")
     parser.add_argument("--esm", type=Path, default=DEFAULT_ESM,
@@ -231,6 +290,8 @@ def main():
                         help="Collapse duplicate weapon rows by displayed stats")
     parser.add_argument("--include-companion-variants", action="store_true",
                         help="Include companion/NPC weapon variants in --playable-only output")
+    parser.add_argument("--format", choices=("text", "json"), default="text",
+                        help="Output format (default: text)")
     args = parser.parse_args()
 
     if not args.esm.exists():
@@ -242,25 +303,46 @@ def main():
 
     data = args.esm.read_bytes()
     resolver = EffectResolver.from_esm(data)
+    output: dict[str, object] = {
+        "esm_path": str(args.esm),
+        "categories": {},
+    }
 
     if show_all or args.armor:
-        armors = parse_all_armors(data)
+        armors = _safe_parse(parse_all_armors, data, "armor")
         if args.playable_only:
             armors = [a for a in armors if a.is_playable]
         for a in armors:
             resolver.resolve_armor(a)
         armors.sort(key=lambda a: a.name)
-
-        print("=== ARMOR ===")
-        for a in armors:
-            effects = format_effects(a.stat_effects)
-            print(f"{a.name} | DT: {a.damage_threshold:g} | Value: {a.value} | Weight: {a.weight:g}")
-            if effects:
-                print(f"  {effects}")
-        print(f"Total: {len(armors)} armor\n")
+        if args.format == "json":
+            output["categories"]["armor"] = {
+                "total": len(armors),
+                "items": [
+                    {
+                        "form_id": a.form_id,
+                        "editor_id": a.editor_id,
+                        "name": a.name,
+                        "damage_threshold": a.damage_threshold,
+                        "value": a.value,
+                        "weight": a.weight,
+                        "is_playable": a.is_playable,
+                        "effects": [_effect_to_dict(e) for e in a.stat_effects],
+                    }
+                    for a in armors
+                ],
+            }
+        else:
+            print("=== ARMOR ===")
+            for a in armors:
+                effects = format_effects(a.stat_effects)
+                print(f"{a.name} | DT: {a.damage_threshold:g} | Value: {a.value} | Weight: {a.weight:g}")
+                if effects:
+                    print(f"  {effects}")
+            print(f"Total: {len(armors)} armor\n")
 
     if show_all or args.weapons:
-        weapons = parse_all_weapons(data)
+        weapons = _safe_parse(parse_all_weapons, data, "weapons")
         for w in weapons:
             resolver.resolve_weapon(w)
         if args.playable_only:
@@ -274,53 +356,101 @@ def main():
             weapons = _dedupe_weapons_for_display(weapons)
         weapons.sort(key=lambda w: w.name)
         disambiguation_labels = _build_weapon_disambiguation_labels(weapons)
-
-        print("=== WEAPONS ===")
-        for w in weapons:
-            effects = format_effects(w.stat_effects)
-            display_name = w.name
-            disambiguation_label = disambiguation_labels.get(w.form_id)
-            if disambiguation_label:
-                display_name = f"{display_name} [{disambiguation_label}]"
-            else:
-                variant_label = _weapon_variant_label(w.editor_id)
-                if variant_label:
-                    display_name = f"{display_name} [{variant_label} variant]"
-            print(f"{display_name} | Dmg: {w.damage} | Value: {w.value} | Weight: {w.weight:g}")
-            if args.verbose:
-                print(f"  form_id={w.form_id:#010x} editor_id={w.editor_id}")
-            if effects:
-                print(f"  {effects}")
-        print(f"Total: {len(weapons)} weapons\n")
+        if args.format == "json":
+            output["categories"]["weapons"] = {
+                "total": len(weapons),
+                "items": [
+                    {
+                        "form_id": w.form_id,
+                        "editor_id": w.editor_id,
+                        "name": w.name,
+                        "display_name": _weapon_display_name(w, disambiguation_labels),
+                        "damage": w.damage,
+                        "value": w.value,
+                        "weight": w.weight,
+                        "weapon_flags_1": int(getattr(w, "weapon_flags_1", 0)),
+                        "weapon_flags_2": int(getattr(w, "weapon_flags_2", 0)),
+                        **_weapon_classification(w),
+                        "effects": [_effect_to_dict(e) for e in w.stat_effects],
+                    }
+                    for w in weapons
+                ],
+            }
+        else:
+            print("=== WEAPONS ===")
+            for w in weapons:
+                effects = format_effects(w.stat_effects)
+                display_name = _weapon_display_name(w, disambiguation_labels)
+                print(f"{display_name} | Dmg: {w.damage} | Value: {w.value} | Weight: {w.weight:g}")
+                if args.verbose:
+                    print(f"  form_id={w.form_id:#010x} editor_id={w.editor_id}")
+                if effects:
+                    print(f"  {effects}")
+            print(f"Total: {len(weapons)} weapons\n")
 
     if show_all or args.consumables:
-        consumables = parse_all_consumables(data)
+        consumables = _safe_parse(parse_all_consumables, data, "consumables")
         for c in consumables:
             resolver.resolve_consumable(c)
         consumables.sort(key=lambda c: c.name)
-
-        print("=== CONSUMABLES ===")
-        for c in consumables:
-            effects = format_effects(c.stat_effects)
-            tag = ""
-            if c.is_medicine:
-                tag = " [Medicine]"
-            elif c.is_food:
-                tag = " [Food]"
-            print(f"{c.name}{tag} | Value: {c.value} | Weight: {c.weight:g}")
-            if effects:
-                print(f"  {effects}")
-        print(f"Total: {len(consumables)} consumables\n")
+        if args.format == "json":
+            output["categories"]["consumables"] = {
+                "total": len(consumables),
+                "items": [
+                    {
+                        "form_id": c.form_id,
+                        "editor_id": c.editor_id,
+                        "name": c.name,
+                        "value": c.value,
+                        "weight": c.weight,
+                        "is_food": c.is_food,
+                        "is_medicine": c.is_medicine,
+                        "effects": [_effect_to_dict(e) for e in c.stat_effects],
+                    }
+                    for c in consumables
+                ],
+            }
+        else:
+            print("=== CONSUMABLES ===")
+            for c in consumables:
+                effects = format_effects(c.stat_effects)
+                tag = ""
+                if c.is_medicine:
+                    tag = " [Medicine]"
+                elif c.is_food:
+                    tag = " [Food]"
+                print(f"{c.name}{tag} | Value: {c.value} | Weight: {c.weight:g}")
+                if effects:
+                    print(f"  {effects}")
+            print(f"Total: {len(consumables)} consumables\n")
 
     if show_all or args.books:
-        books = parse_all_books(data)
+        books = _safe_parse(parse_all_books, data, "books")
         skill_books = [b for b in books if b.is_skill_book]
         skill_books.sort(key=lambda b: b.name)
+        if args.format == "json":
+            output["categories"]["books"] = {
+                "total_books": len(books),
+                "total_skill_books": len(skill_books),
+                "items": [
+                    {
+                        "form_id": b.form_id,
+                        "editor_id": b.editor_id,
+                        "name": b.name,
+                        "skill_name": b.skill_name,
+                        "value": b.value,
+                    }
+                    for b in skill_books
+                ],
+            }
+        else:
+            print("=== SKILL BOOKS ===")
+            for b in skill_books:
+                print(f"{b.name} | {b.skill_name} (+1) | Value: {b.value}")
+            print(f"Total: {len(skill_books)} skill books (of {len(books)} books)\n")
 
-        print("=== SKILL BOOKS ===")
-        for b in skill_books:
-            print(f"{b.name} | {b.skill_name} (+1) | Value: {b.value}")
-        print(f"Total: {len(skill_books)} skill books (of {len(books)} books)\n")
+    if args.format == "json":
+        print(json.dumps(output, indent=2))
 
 
 if __name__ == "__main__":

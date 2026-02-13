@@ -188,9 +188,35 @@ pytest
 python -m scripts.dump_perks --playable-only
 python -m scripts.dump_items --armor --playable-only
 python -m scripts.dump_items --weapons --consumables --books
+python -m scripts.dump_items --weapons --playable-only --format json
 python -m scripts.dump_graph
 python -m scripts.dump_character
 
 # Interactive CLI prototype for Build / Progression / Library flows
 python -m scripts.prototype_ui [--esm /path/to/FalloutNV.esm]
 ```
+
+### `dump_items` weapon output notes
+- `--playable-only` (weapons): player-facing list for planning. Companion/NPC/helper variants are filtered out.
+- `--include-companion-variants`: only applies with `--playable-only`; re-includes companion/NPC weapon variants for reference.
+- Duplicate weapon names are auto-disambiguated in output:
+  - Prefer readable labels when possible (example: `[Lily]`, `[Weak]`, `[Always-Crit]`)
+  - Fall back to `editor_id` labels when names still collide (example: `[WeapPlasmaRifle]`)
+- `--dedupe` collapses only rows that are identical in displayed combat context (name, damage, value, weight, resolved effects).
+
+### `dump_items` identity semantics
+- `record-distinct`: each ESM record is unique by `form_id`/`editor_id`.
+- `gameplay-distinct`: same display name can still be different gameplay entities (example: base, companion, weak/always-crit variants).
+- `display-distinct`: duplicate names in text output are always labeled so rows are unambiguous.
+- `--dedupe` removes only rows that are display-equivalent (same printed combat profile and effects), not just same name.
+
+### `dump_items` JSON mode
+- `--format json` emits structured output with selected categories under `categories`.
+- Weapon entries include both `name` and `display_name` (with disambiguation labels), plus `editor_id`, `form_id`, stats, and resolved effects.
+- Weapon classification fields:
+  - `record_flag_playable`: raw WEAP record-flag interpretation (`Weapon.is_playable`).
+  - `non_playable_flagged`: WEAP `Flags1` bit 7 (game-data non-playable marker).
+  - `embedded_weapon_flagged`: WEAP `Flags1` bit 5 (embedded weapon marker).
+  - `is_player_facing`: planner heuristic for player-usable gear (filters companion/NPC/helper-only entries).
+  - `is_non_player` and `is_variant`: extra diagnostics used by the filter/disambiguation logic.
+- Use JSON mode for scripts and regression checks; use text mode for quick manual inspection.

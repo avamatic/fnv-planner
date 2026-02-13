@@ -44,8 +44,20 @@ class Weapon:
     equipment_slot: int         # ETYP index
     enchantment_form_id: int | None
     is_playable: bool           # header flag bit 2 inverted (non-playable flag)
+    weapon_flags_1: int = 0     # WEAP DNAM Flags1 (u8), when available
+    weapon_flags_2: int = 0     # WEAP DNAM Flags2 (u32), when available
     stat_effects: list[StatEffect] = field(default_factory=list)
     conditional_effects_excluded: int = 0
+
+    @property
+    def is_non_playable_flagged(self) -> bool:
+        # GetWeaponFlags1 bit 7: weapon is non-playable.
+        return bool(self.weapon_flags_1 & 0x80)
+
+    @property
+    def is_embedded_weapon(self) -> bool:
+        # GetWeaponFlags1 bit 5: weapon is embedded.
+        return bool(self.weapon_flags_1 & 0x20)
 
 
 @dataclass(slots=True)

@@ -111,6 +111,8 @@ def parse_weapon(record: Record) -> Weapon:
     crit_multiplier = 0.0
     equipment_slot = -1
     ench_form_id: int | None = None
+    weapon_flags_1 = 0
+    weapon_flags_2 = 0
     # Bit 2 (0x04) of record flags = non-playable
     is_playable = not bool(record.header.flags & 0x04)
 
@@ -133,6 +135,11 @@ def parse_weapon(record: Record) -> Weapon:
             # crit_damage(u16) + padding(2) + crit_multiplier(f32) + ...
             crit_damage = struct.unpack_from("<H", sub.data, 0)[0]
             crit_multiplier = struct.unpack_from("<f", sub.data, 4)[0]
+        elif sub.type == "DNAM" and len(sub.data) >= 60:
+            # DNAM contains WEAP tuning fields including Flags1 (u8) at offset 12
+            # and Flags2 (u32) at offset 56.
+            weapon_flags_1 = sub.data[12]
+            weapon_flags_2 = struct.unpack_from("<I", sub.data, 56)[0]
 
     return Weapon(
         form_id=record.header.form_id,
@@ -148,6 +155,8 @@ def parse_weapon(record: Record) -> Weapon:
         equipment_slot=equipment_slot,
         enchantment_form_id=ench_form_id,
         is_playable=is_playable,
+        weapon_flags_1=weapon_flags_1,
+        weapon_flags_2=weapon_flags_2,
     )
 
 
