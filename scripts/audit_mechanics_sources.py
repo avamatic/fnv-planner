@@ -127,7 +127,15 @@ def main() -> None:
     )
     args = parser.parse_args()
 
-    paths, missing, _is_explicit = resolve_plugins_for_cli(args.esm, DEFAULT_ESM)
+    try:
+        paths, missing, _is_explicit = resolve_plugins_for_cli(args.esm, DEFAULT_ESM)
+    except FileNotFoundError:
+        # CI runners generally do not have local game data. For default resolution
+        # only, degrade to built-in defaults so guardrails stay runnable everywhere.
+        if args.esm:
+            raise
+        paths, missing, _is_explicit = [], [], False
+        print("Warning: no default plugins found; using built-in GMST defaults.")
     if missing:
         print("Warning: some default vanilla plugins are missing and will be skipped:")
         for p in missing:
