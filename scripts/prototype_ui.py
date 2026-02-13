@@ -20,6 +20,13 @@ from fnv_planner.models.perk import Perk
 from fnv_planner.parser.effect_resolver import EffectResolver
 from fnv_planner.parser.item_parser import parse_all_armors, parse_all_weapons
 from fnv_planner.parser.perk_parser import parse_all_perks
+from fnv_planner.parser.plugin_merge import (
+    effective_vanilla_level_cap,
+    has_non_base_level_cap_override,
+    load_plugin_bytes,
+    parse_records_merged,
+    resolve_plugins_for_cli,
+)
 
 
 DEFAULT_ESM = Path(
@@ -32,13 +39,13 @@ NAME_TO_AV = {name.lower(): av for av, name in ACTOR_VALUE_NAMES.items()}
 
 def _balanced_special() -> dict[int, int]:
     return {
-        AV.STRENGTH: 7,
-        AV.PERCEPTION: 7,
-        AV.ENDURANCE: 6,
-        AV.CHARISMA: 6,
-        AV.INTELLIGENCE: 5,
+        AV.STRENGTH: 5,
+        AV.PERCEPTION: 5,
+        AV.ENDURANCE: 5,
+        AV.CHARISMA: 5,
+        AV.INTELLIGENCE: 10,
         AV.AGILITY: 5,
-        AV.LUCK: 4,
+        AV.LUCK: 5,
     }
 
 
@@ -127,8 +134,10 @@ class PrototypeCli:
             return False
         if cmd == "level":
             level = int(rest[0], 10)
-            if level < 1 or level > self.engine.state.target_level:
-                raise ValueError("level out of range")
+            if level < 1 or level > self.engine.max_level:
+                raise ValueError(f"level out of range (1..{self.engine.max_level})")
+            if level > self.engine.state.target_level:
+                self.engine.set_target_level(level)
             self.current_level = level
             self._print_build()
             return False
@@ -252,7 +261,7 @@ class PrototypeCli:
     def _print_build(self) -> None:
         state = self.engine.state
         print(
-            f"\nBUILD  current=L{self.current_level}  target=L{state.target_level}  "
+            f"\nBUILD  current=L{self.current_level}  target=L{state.target_level}  max=L{self.engine.max_level}  "
             f"valid={'yes' if self.engine.is_valid() else 'no'}"
         )
         snap = self.ui.level_snapshot(self.current_level)
@@ -323,22 +332,33 @@ class PrototypeCli:
 
 
 def _build_engine_from_data(
-    raw: bytes | None,
+    plugin_datas: list[bytes] | None,
+    plugin_paths: list[Path] | None = None,
 ) -> tuple[BuildEngine, dict[int, Perk], dict[int, Armor], dict[int, Weapon]]:
-    if raw is None:
+    if not plugin_datas:
         gmst = GameSettings.defaults()
         perks: list[Perk] = []
         armors: dict[int, Armor] = {}
         weapons: dict[int, Weapon] = {}
     else:
-        gmst = GameSettings.from_esm(raw)
-        perks = parse_all_perks(raw)
+        gmst = GameSettings.from_plugins(plugin_datas)
+        if not gmst._values:
+            print("Warning: GMST GRUP not found in provided plugins; using vanilla defaults.")
+            gmst = GameSettings.defaults()
+        elif plugin_paths:
+            has_override = has_non_base_level_cap_override(plugin_paths, plugin_datas)
+            gmst._values["iMaxCharacterLevel"] = effective_vanilla_level_cap(
+                plugin_paths,
+                gmst.get_int("iMaxCharacterLevel", 50),
+                has_non_base_cap_override=has_override,
+            )
+        perks = parse_records_merged(plugin_datas, parse_all_perks, missing_group_ok=True)
         graph = DependencyGraph.build(perks)
         engine = BuildEngine.new_build(gmst, graph)
 
-        resolver = EffectResolver.from_esm(raw)
-        armors_list = parse_all_armors(raw)
-        weapons_list = parse_all_weapons(raw)
+        resolver = EffectResolver.from_plugins(plugin_datas)
+        armors_list = parse_records_merged(plugin_datas, parse_all_armors, missing_group_ok=True)
+        weapons_list = parse_records_merged(plugin_datas, parse_all_weapons, missing_group_ok=True)
         for armor in armors_list:
             resolver.resolve_armor(armor)
         for weapon in weapons_list:
@@ -360,22 +380,38 @@ def _init_default_build(engine: BuildEngine) -> None:
     engine.set_special(_balanced_special())
     engine.set_sex(0)
     engine.set_tagged_skills({AV.GUNS, AV.LOCKPICK, AV.SPEECH})
-    engine.set_target_level(10)
+    engine.set_target_level(engine.max_level)
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Run interactive FNV planner prototype CLI")
-    parser.add_argument("--esm", type=Path, default=DEFAULT_ESM, help="Path to FalloutNV.esm")
+    parser.add_argument(
+        "--esm",
+        type=Path,
+        action="append",
+        help="Plugin path; repeat in load order (last wins).",
+    )
     args = parser.parse_args()
 
-    raw: bytes | None = None
-    if args.esm.exists():
-        raw = args.esm.read_bytes()
-        print(f"Loaded ESM: {args.esm}")
-    else:
-        print(f"ESM not found at {args.esm}; running in defaults-only mode.")
+    plugin_datas: list[bytes] | None = None
+    try:
+        esm_paths, missing, _is_explicit = resolve_plugins_for_cli(args.esm, DEFAULT_ESM)
+    except FileNotFoundError as exc:
+        print(f"Warning: {exc}")
+        print("No plugins found; running in defaults-only mode.")
+        esm_paths = []
+        missing = []
 
-    engine, perks, armors, weapons = _build_engine_from_data(raw)
+    if missing:
+        print("Warning: some default vanilla plugins are missing and will be skipped:")
+        for p in missing:
+            print(f"  - {p.name}")
+    if esm_paths:
+        print(f"Loading plugins: {', '.join(str(p) for p in esm_paths)}")
+        plugin_datas = load_plugin_bytes(esm_paths)
+
+    engine, perks, armors, weapons = _build_engine_from_data(plugin_datas, esm_paths)
+    print(f"Max character level from game data: {engine.max_level}")
     ui = BuildUiModel(engine, armors=armors, weapons=weapons)
     cli = PrototypeCli(engine, ui, perks, armors, weapons)
     cli.run()

@@ -65,6 +65,11 @@ def test_educated(perk_by_edid):
     assert req.name == "Intelligence"
     assert req.operator == ">="
     assert req.value == 4
+    assert len(p.entry_point_effects) >= 1
+    assert any(
+        b.entry_point == 2 and any(len(payload) == 3 and payload[0] == 10 for payload in b.data_payloads)
+        for b in p.entry_point_effects
+    )
 
 
 def test_strong_back(perk_by_edid):
@@ -149,6 +154,21 @@ def test_here_and_now(perk_by_edid):
     req = p.level_requirements[0]
     assert req.operator == "<"
     assert req.value == 30
+
+
+def test_comprehension_has_entry_point_effect(perk_by_edid):
+    p = perk_by_edid["Comprehension"]
+    assert len(p.entry_point_effects) >= 1
+    assert any(
+        b.entry_point == 2 and any(len(payload) == 3 and payload[0] == 11 for payload in b.data_payloads)
+        for b in p.entry_point_effects
+    )
+
+
+def test_intense_training_has_ranked_special_effects(perk_by_edid):
+    p = perk_by_edid["IntenseTraining"]
+    # 10 ranked PRKE effect blocks for selectable SPECIAL increases.
+    assert len([b for b in p.entry_point_effects if b.entry_point == 0]) >= 10
 
 
 def test_ghastly_scavenger(perk_by_edid):

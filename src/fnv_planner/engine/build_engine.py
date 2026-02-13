@@ -45,6 +45,7 @@ class LevelPlan:
 
     level: int
     skill_points: dict[int, int] = field(default_factory=dict)
+    special_points: dict[int, int] = field(default_factory=dict)
     perk: int | None = None
 
 
@@ -55,6 +56,7 @@ class BuildState:
     name: str = "Courier"
     sex: int | None = None
     special: dict[int, int] = field(default_factory=dict)
+    creation_special_points: dict[int, int] = field(default_factory=dict)
     tagged_skills: set[int] = field(default_factory=set)
     traits: list[int] = field(default_factory=list)
     equipment: dict[int, int] = field(default_factory=dict)
@@ -135,6 +137,20 @@ class BuildEngine:
         clone._stats_cache = {}
         return clone
 
+    def replace_state(self, state: BuildState) -> None:
+        """Replace internal state atomically and clear cached stats."""
+        self._state = copy.deepcopy(state)
+        self._stats_cache.clear()
+
+    def reset_progression(self) -> None:
+        """Clear all level-up plans and reset target level to 1.
+
+        Keeps creation-phase choices (SPECIAL, tags, traits, sex, equipment, name).
+        """
+        self._state.level_plans.clear()
+        self._state.target_level = 1
+        self._invalidate_from(2)
+
     # --- State property ----------------------------------------------------
 
     @property
@@ -144,8 +160,31 @@ class BuildEngine:
 
     @property
     def max_level(self) -> int:
-        """Maximum character level from GMST."""
-        return self._derived.max_level()
+        """Maximum character level from GMST, adjusted by active perk effects."""
+        gmst_cap = self._derived.max_level()
+        if self._has_logans_loophole_selected():
+            return min(gmst_cap, 30)
+        return gmst_cap
+
+    @property
+    def special_budget(self) -> int:
+        return self._config.special_budget
+
+    @property
+    def special_min(self) -> int:
+        return self._config.special_min
+
+    @property
+    def special_max(self) -> int:
+        return self._config.special_max
+
+    @property
+    def max_traits(self) -> int:
+        return self._config.max_traits
+
+    @property
+    def skill_cap(self) -> int:
+        return self._config.skill_cap
 
     # --- Cache helpers -----------------------------------------------------
 
@@ -196,6 +235,18 @@ class BuildEngine:
                 f"SPECIAL budget must be {self._config.special_budget}, got {total}"
             )
         self._state.special = dict(special)
+        self._invalidate_from(1)
+
+    def set_creation_special_points(self, points: dict[int, int]) -> None:
+        """Set creation-time SPECIAL increases applied before level 2."""
+        for av, pts in points.items():
+            if av not in SPECIAL_INDICES:
+                raise ValueError(f"Invalid SPECIAL AV index: {av}")
+            if pts < 0:
+                raise ValueError(
+                    f"Negative creation SPECIAL points ({pts}) for AV {av}"
+                )
+        self._state.creation_special_points = dict(points)
         self._invalidate_from(1)
 
     def set_special_working(self, special: dict[int, int]) -> None:
@@ -270,6 +321,7 @@ class BuildEngine:
             if t not in available:
                 raise ValueError(f"Trait {t:#x} is not available")
         self._state.traits = list(traits)
+        self._enforce_target_within_max_level()
         self._invalidate_from(1)
 
     def toggle_trait(self, trait_id: int) -> bool:
@@ -277,6 +329,7 @@ class BuildEngine:
         traits = self._state.traits
         if trait_id in traits:
             traits.remove(trait_id)
+            self._enforce_target_within_max_level()
             self._invalidate_from(1)
             return True
         available = set(self._graph.available_traits())
@@ -285,6 +338,7 @@ class BuildEngine:
         if len(traits) >= self._config.max_traits:
             return False
         traits.append(trait_id)
+        self._enforce_target_within_max_level()
         self._invalidate_from(1)
         return True
 
@@ -383,6 +437,28 @@ class BuildEngine:
         plan.skill_points = dict(points)
         self._invalidate_from(level)
 
+    def allocate_special_points(self, level: int, points: dict[int, int]) -> None:
+        """Set SPECIAL increases applied at a level (e.g., Intense Training/implants)."""
+        if level < 2 or level > self._state.target_level:
+            raise ValueError(
+                f"Cannot allocate SPECIAL at level {level} "
+                f"(target is {self._state.target_level})"
+            )
+        plan = self._state.level_plans.get(level)
+        if plan is None:
+            raise ValueError(f"No LevelPlan for level {level}")
+
+        for av, pts in points.items():
+            if av not in SPECIAL_INDICES:
+                raise ValueError(f"Invalid SPECIAL AV index: {av}")
+            if pts < 0:
+                raise ValueError(
+                    f"Negative SPECIAL points ({pts}) for AV {av}"
+                )
+
+        plan.special_points = dict(points)
+        self._invalidate_from(level)
+
     def select_perk(self, level: int, perk_id: int) -> None:
         """Select a perk at the given level."""
         if level < 2 or level > self._state.target_level:
@@ -406,6 +482,7 @@ class BuildEngine:
             )
 
         plan.perk = perk_id
+        self._enforce_target_within_max_level()
         self._invalidate_from(level)
 
     def remove_perk(self, level: int) -> None:
@@ -414,6 +491,7 @@ class BuildEngine:
         if plan is None:
             raise ValueError(f"No LevelPlan for level {level}")
         plan.perk = None
+        self._enforce_target_within_max_level()
         self._invalidate_from(level)
 
     # --- Queries -----------------------------------------------------------
@@ -433,6 +511,15 @@ class BuildEngine:
 
         # Accumulate skill points spent across all levels up to *level*.
         cumulative = self._cumulative_skill_points(level)
+        special = dict(self._state.special) if self._state.special else {}
+        for av, pts in self._state.creation_special_points.items():
+            special[av] = special.get(av, self.special_min) + pts
+        for lv in range(2, level + 1):
+            plan = self._state.level_plans.get(lv)
+            if not plan:
+                continue
+            for av, pts in plan.special_points.items():
+                special[av] = special.get(av, self.special_min) + pts
 
         # Accumulate perks across all levels up to *level*.
         perks: dict[int, list[int]] = {}
@@ -447,7 +534,7 @@ class BuildEngine:
             name=self._state.name,
             level=level,
             sex=self._state.sex,
-            special=dict(self._state.special) if self._state.special else {},
+            special=special,
             tagged_skills=set(self._state.tagged_skills),
             skill_points_spent=cumulative,
             traits=list(self._state.traits),
@@ -570,6 +657,20 @@ class BuildEngine:
                         0, "special",
                         f"SPECIAL budget is {cfg.special_budget}, got {total}",
                     ))
+                for av, pts in self._state.creation_special_points.items():
+                    if pts < 0:
+                        errors.append(BuildError(
+                            0, "special",
+                            f"Creation SPECIAL bonus for {av} cannot be negative ({pts})",
+                        ))
+                        continue
+                    effective = self._state.special.get(av, cfg.special_min) + pts
+                    if effective > cfg.special_max:
+                        errors.append(BuildError(
+                            0, "special",
+                            f"Creation SPECIAL {av} effective value {effective} exceeds "
+                            f"cap {cfg.special_max}",
+                        ))
 
         # Tagged skills
         if len(self._state.tagged_skills) != cfg.num_tagged_skills:
@@ -717,8 +818,9 @@ class BuildEngine:
         else:
             raise ValueError(f"Invalid skill AV index: {av}")
         special = self._state.special or {}
-        gov_val = special.get(gov_av, 5)
-        luck = special.get(11, 5)  # ActorValue.LUCK = 11
+        creation_bonus = self._state.creation_special_points or {}
+        gov_val = special.get(gov_av, 5) + creation_bonus.get(gov_av, 0)
+        luck = special.get(11, 5) + creation_bonus.get(11, 0)  # ActorValue.LUCK = 11
         base = self._derived.initial_skill(gov_val, luck)
         if av in self._state.tagged_skills:
             base += self._derived.tag_bonus()
@@ -733,6 +835,15 @@ class BuildEngine:
         see it as "already taken" and refuse it.
         """
         cumulative = self._cumulative_skill_points(level)
+        special = dict(self._state.special) if self._state.special else {}
+        for av, pts in self._state.creation_special_points.items():
+            special[av] = special.get(av, self.special_min) + pts
+        for lv in range(2, level + 1):
+            plan = self._state.level_plans.get(lv)
+            if not plan:
+                continue
+            for av, pts in plan.special_points.items():
+                special[av] = special.get(av, self.special_min) + pts
 
         perks: dict[int, list[int]] = {}
         for lv in range(2, level + 1):
@@ -744,10 +855,37 @@ class BuildEngine:
             name=self._state.name,
             level=level,
             sex=self._state.sex,
-            special=dict(self._state.special) if self._state.special else {},
+            special=special,
             tagged_skills=set(self._state.tagged_skills),
             skill_points_spent=cumulative,
             traits=list(self._state.traits),
             perks=perks,
             equipment={},
         )
+
+    def _has_logans_loophole_selected(self) -> bool:
+        """Return True if selected traits/perks include Logan's Loophole behavior."""
+        selected_ids: set[int] = set(self._state.traits)
+        for plan in self._state.level_plans.values():
+            if plan.perk is not None:
+                selected_ids.add(plan.perk)
+
+        for perk_id in selected_ids:
+            node = self._graph.get_node(perk_id)
+            if node is None:
+                continue
+            name = node.name.lower().replace("'", "")
+            edid = node.editor_id.lower().replace("_", "")
+            if "logans loophole" in name or "logansloophole" in edid:
+                return True
+        return False
+
+    def _enforce_target_within_max_level(self) -> None:
+        """Clamp target/progression when runtime max-level modifiers are active."""
+        capped = self.max_level
+        if self._state.target_level <= capped:
+            return
+        self._state.target_level = capped
+        to_remove = [lv for lv in self._state.level_plans if lv > capped]
+        for lv in to_remove:
+            del self._state.level_plans[lv]

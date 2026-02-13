@@ -1,8 +1,9 @@
 """Parse PERK records into Perk objects with typed requirements.
 
-Key parsing rule:
+Key parsing rules:
   - CTDAs *before* the first PRKE subrecord = perk requirements
-  - CTDAs *inside* PRKE…PRKF blocks = effect conditions (ignored for now)
+  - PRKE...PRKF blocks are parsed into structured effect entries
+  - CTDAs *inside* PRKE…PRKF blocks are effect conditions (kept raw only)
 
 CTDA subrecord layout (28 bytes):
   byte  0:    type flags (bits 5-7 = comparison operator, bit 0 = OR flag)
@@ -28,6 +29,7 @@ from fnv_planner.models.constants import (
 from fnv_planner.models.perk import (
     LevelRequirement,
     Perk,
+    PerkEntryPointEffect,
     PerkRequirement,
     RawCondition,
     SexRequirement,
@@ -78,6 +80,8 @@ def parse_perk(record: Record) -> Perk:
     ordered_reqs: list[
         SkillRequirement | PerkRequirement | LevelRequirement | SexRequirement
     ] = []
+    effect_blocks: list[PerkEntryPointEffect] = []
+    current_effect: PerkEntryPointEffect | None = None
 
     # Track whether we've hit the first PRKE — after that, CTDAs are effect conditions
     seen_prke = False
@@ -105,6 +109,17 @@ def parse_perk(record: Record) -> Perk:
 
         elif sub.type == "PRKE":
             seen_prke = True
+            if current_effect is not None:
+                effect_blocks.append(current_effect)
+                current_effect = None
+            b0 = sub.data[0] if len(sub.data) >= 1 else 0
+            b1 = sub.data[1] if len(sub.data) >= 2 else 0
+            b2 = sub.data[2] if len(sub.data) >= 3 else 0
+            current_effect = PerkEntryPointEffect(
+                entry_point=int(b0),
+                rank_index=int(b1),
+                priority=int(b2),
+            )
 
         elif sub.type == "CTDA" and not seen_prke:
             # This is a perk requirement condition
@@ -171,6 +186,25 @@ def parse_perk(record: Record) -> Perk:
                     param2=ctda["param2"],
                     is_or=ctda["is_or"],
                 ))
+        elif sub.type == "DATA" and seen_prke and len(sub.data) != 5:
+            if current_effect is None:
+                current_effect = PerkEntryPointEffect(entry_point=0, rank_index=0, priority=0)
+            current_effect.data_payloads.append(bytes(sub.data))
+        elif sub.type == "EPFT" and seen_prke:
+            if current_effect is None:
+                current_effect = PerkEntryPointEffect(entry_point=0, rank_index=0, priority=0)
+            current_effect.epft = sub.data[0] if len(sub.data) >= 1 else None
+        elif sub.type == "EPFD" and seen_prke:
+            if current_effect is None:
+                current_effect = PerkEntryPointEffect(entry_point=0, rank_index=0, priority=0)
+            current_effect.epfd = bytes(sub.data)
+        elif sub.type == "PRKF" and seen_prke:
+            if current_effect is not None:
+                effect_blocks.append(current_effect)
+                current_effect = None
+
+    if current_effect is not None:
+        effect_blocks.append(current_effect)
 
     return Perk(
         form_id=record.header.form_id,
@@ -188,6 +222,7 @@ def parse_perk(record: Record) -> Perk:
         level_requirements=level_reqs,
         raw_conditions=raw_conds,
         ordered_requirements=ordered_reqs,
+        entry_point_effects=effect_blocks,
     )
 
 

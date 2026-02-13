@@ -65,6 +65,18 @@ class RawCondition:
 
 
 @dataclass(slots=True)
+class PerkEntryPointEffect:
+    """A parsed PRKE...PRKF perk effect block."""
+
+    entry_point: int
+    rank_index: int
+    priority: int
+    data_payloads: list[bytes] = field(default_factory=list)
+    epft: int | None = None
+    epfd: bytes | None = None
+
+
+@dataclass(slots=True)
 class Perk:
     """A parsed PERK record."""
     form_id: int
@@ -88,3 +100,5 @@ class Perk:
     ordered_requirements: list[
         SkillRequirement | PerkRequirement | LevelRequirement | SexRequirement
     ] = field(default_factory=list)
+    # Parsed perk effect blocks (PRKE...PRKF), in source order.
+    entry_point_effects: list[PerkEntryPointEffect] = field(default_factory=list)

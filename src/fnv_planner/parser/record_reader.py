@@ -76,6 +76,34 @@ def _read_record(reader: BinaryReader) -> Record:
     return Record(header=header, subrecords=subrecords)
 
 
+def _read_record_after_sig(reader: BinaryReader, sig: str) -> Record:
+    """Read a single record when the 4-byte signature is already consumed."""
+    data_size = reader.uint32()
+    flags = reader.uint32()
+    form_id = reader.uint32()
+    revision = reader.uint32()
+    version = reader.uint16()
+    reader.skip(2)
+    header = RecordHeader(
+        type=sig,
+        data_size=data_size,
+        flags=flags,
+        form_id=form_id,
+        revision=revision,
+        version=version,
+    )
+
+    data_reader = reader.slice(data_size)
+    if header.is_compressed:
+        decompressed_size = data_reader.uint32()
+        compressed = data_reader.bytes(data_reader.remaining)
+        raw = zlib.decompress(compressed, bufsize=decompressed_size)
+        data_reader = BinaryReader(raw)
+
+    subrecords = _parse_subrecords(data_reader)
+    return Record(header=header, subrecords=subrecords)
+
+
 def read_grup(
     data: bytes,
     label: str,
@@ -150,3 +178,51 @@ def iter_grup(
 
     if not found:
         raise ValueError(f"GRUP {label!r} not found in plugin")
+
+
+def _iter_records_matching(data: bytes, wanted_types: set[str]) -> "Generator[Record]":
+    if not wanted_types:
+        return
+    if any(len(record_type) != 4 for record_type in wanted_types):
+        raise ValueError("record_type signatures must be 4 characters")
+
+    reader = BinaryReader(data)
+    tes4_sig = reader.signature()
+    if tes4_sig != "TES4":
+        raise ValueError(f"Expected TES4 header, got {tes4_sig!r}")
+    tes4_data_size = reader.uint32()
+    reader.skip(16 + tes4_data_size)
+
+    def _iter_scope(scope: BinaryReader) -> "Generator[Record]":
+        while scope.remaining > 0:
+            sig = scope.signature()
+            if sig == "GRUP":
+                group_size = scope.uint32()
+                scope.skip(4)   # label (raw; not always ASCII for nested groups)
+                scope.skip(4)   # group_type
+                scope.skip(4)   # stamp
+                scope.skip(4)   # unknown/version
+                sub_scope = scope.slice(group_size - _GROUP_HEADER_SIZE)
+                yield from _iter_scope(sub_scope)
+                continue
+
+            if sig in wanted_types:
+                yield _read_record_after_sig(scope, sig)
+                continue
+
+            # Fast-skip non-matching records.
+            data_size = scope.uint32()
+            scope.skip(16)  # flags + form_id + revision + version+unknown(2)
+            scope.skip(data_size)
+
+    yield from _iter_scope(reader)
+
+
+def iter_records_of_type(data: bytes, record_type: str) -> "Generator[Record]":
+    """Yield all records of *record_type* from all nested GRUP scopes."""
+    yield from _iter_records_matching(data, {record_type})
+
+
+def iter_records_of_types(data: bytes, record_types: tuple[str, ...]) -> "Generator[Record]":
+    """Yield all records whose type is in *record_types* from nested GRUP scopes."""
+    yield from _iter_records_matching(data, set(record_types))

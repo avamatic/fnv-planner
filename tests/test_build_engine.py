@@ -680,6 +680,35 @@ class TestBuildConfig:
         # 45 points → valid
         e.set_special(_special(st=7, pe=7, en=7, ch=7, in_=7, ag=5, lk=5))
 
+    def test_logans_loophole_caps_max_level_to_30(self):
+        logan = _perk(
+            form_id=0xBEEF,
+            editor_id="TraitLogansLoophole",
+            name="Logan's Loophole",
+            is_trait=True,
+            min_level=1,
+        )
+        e = _engine(perks=[logan])
+        _setup_creation(e)
+        assert e.max_level == 50
+        e.set_traits([logan.form_id])
+        assert e.max_level == 30
+
+    def test_logans_loophole_respects_lower_gmst_cap(self):
+        logan = _perk(
+            form_id=0xBEE1,
+            editor_id="TraitLogansLoophole",
+            name="Logan's Loophole",
+            is_trait=True,
+            min_level=1,
+        )
+        gmst = GameSettings.defaults()
+        gmst._values["iMaxCharacterLevel"] = 20
+        e = BuildEngine(gmst, DependencyGraph.build([logan]))
+        _setup_creation(e)
+        e.set_traits([logan.form_id])
+        assert e.max_level == 20
+
 
 # ===========================================================================
 # Edge cases

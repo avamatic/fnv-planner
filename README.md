@@ -2,6 +2,7 @@
 
 ## Overview
 A mod-aware character build planner and optimizer for Fallout: New Vegas. Treats perks like packages with dependencies (SPECIAL stats, skills, challenges, quests) and helps you plan optimal builds level by level.
+The current UI is a GTK4/Libadwaita desktop app centered on a **priority-request** workflow: you describe target outcomes (stats/skills/perks/traits/max-skills), order them by priority, and the planner computes a full build to max level.
 
 ## Roadmap
 
@@ -70,21 +71,29 @@ Logic layer between raw data models and the future UI/optimizer. Validates and s
 - Includes equipment setters, bulk equipment updates, unmet requirement querying, and optional Big Guns support via config
 - Files: `engine/build_engine.py`, `engine/build_config.py`
 
-### Phase 2b — UX Prototyping 🟡
-- GUI package was intentionally removed to reset UX direction
-- `BuildUiModel` provides UI-facing data contracts for Build / Progression / Library screens
-- Interactive CLI prototype available at `scripts/prototype_ui.py` for workflow testing
-- Screen-by-screen GUI spec is defined in `docs/UI_SPEC.md` (includes `Cool Stuff` perk-graph tab)
+### Phase 2b — GTK UI (Adwaita) 🟡
+- GTK4 + Libadwaita UI is active under `fnv_planner.ui`
+- Build page uses ordered priority requests (stat/skill, perk, trait, max-skills bundle)
+- Target level is fixed to detected max level from loaded content
+- Progression page shows full per-level timeline (perk pick, skill distribution, absolute skill values, per-level/cumulative skill-book usage)
+- Challenge/special perks are surfaced as any-time perks (separate from scheduled level timeline)
+- Screen-by-screen spec is in `docs/UI_SPEC.md`
+- Implementation strategy (architecture + Flatpak milestones) is in `docs/UI_IMPLEMENTATION_PLAN.md`
 
 ### Phase 3 — Optimizer ⬜
 - Algorithm that finds optimal builds for user-defined goals (max crit, max DPS, best melee, max skills, etc.)
 - Generate a level-by-level plan for growing the character from 1 to max
 - Export the plan to a document with room for manual notes (e.g., "grab power armor from dead troopers near Hidden Valley at level 1")
+- Deterministic planner is available under `fnv_planner.optimizer`:
+  - `GoalSpec` + `StartingConditions` input models
+  - `plan_build(...)` feasibility planner that produces a level-by-level `BuildState`
+  - Priority-aware scheduling for actor values, perks, traits, and `max_skills`
+  - Perk/trait text + structured-effect inference for planner-relevant bonuses (for example skill points/level, skill-book multiplier, all-skills bonuses)
+  - Skill-book usage accounting by skill and by level
 
 #### Optimizer Planning Considerations
 - Max-skills scenarios with configurable skill-book collection commitments (planning around collecting 100% / 50% / 25% of books)
-- Optional inclusion of the `Skilled` exploit in optimization runs
-- Optional inclusion of `Intense Training` perk picks as optimization decisions
+- `Skilled` trait and `Intense Training` are considered by max-skills planning when they improve feasibility
 - Implant planning (maximum implants determined by Endurance)
 - Optional support for modded `Big Guns` skill in optimization and requirement evaluation
 
@@ -135,8 +144,9 @@ Books use a skill_index field (skill = index + 32) instead of enchantments.
 - **Language**: Python 3.12+
 - **Game data parsing**: Custom ESP/ESM parser (Bethesda plugin format)
 - **Dependency graph**: Custom CNF requirement evaluation
-- **Optimization** (planned): scipy/numpy
-- **Current UX layer**: Engine-side `BuildUiModel` + interactive CLI prototype
+- **Optimization**: Deterministic planner (`fnv_planner.optimizer`)
+- **Desktop UI**: GTK4 + Libadwaita + PyGObject (`fnv_planner.ui`)
+- **UX model/CLI**: `BuildUiModel` + `scripts/prototype_ui.py`
 
 ## Project Structure
 ```
@@ -150,6 +160,9 @@ fnv-planner/
 │   │   └── ui_model.py           # UI-facing adapter: selected entities, progression, diagnostics
 │   ├── graph/
 │   │   └── dependency_graph.py   # DependencyGraph: perk eligibility & trait queries
+│   ├── optimizer/
+│   │   ├── planner.py            # Priority-request planner and level-by-level schedule generation
+│   │   └── specs.py              # GoalSpec, RequirementSpec, StartingConditions
 │   ├── models/
 │   │   ├── character.py          # Character dataclass
 │   │   ├── constants.py          # ActorValue enum, index sets, name mappings
@@ -159,7 +172,7 @@ fnv-planner/
 │   │   ├── item.py               # Armor, Weapon, Consumable, Book
 │   │   ├── perk.py               # Perk, requirement types
 │   │   └── records.py            # Subrecord, RecordHeader, Record, GroupHeader
-│   └── parser/
+│   ├── parser/
 │       ├── binary_reader.py      # Low-level typed binary reads
 │       ├── record_reader.py      # GRUP iteration and record extraction
 │       ├── perk_parser.py        # PERK record parsing
@@ -167,12 +180,19 @@ fnv-planner/
 │       ├── effect_parser.py      # MGEF + ENCH record parsing
 │       ├── effect_resolver.py    # Item → enchantment → stat effect resolution
 │       └── item_parser.py        # ARMO, WEAP, ALCH, BOOK record parsing
+│   └── ui/
+│       ├── app.py                # GTK4/Adwaita app entrypoint
+│       ├── bootstrap.py          # Session bootstrap from plugin stack
+│       ├── controllers/          # Build/Progression/Library/Graph UI controllers
+│       ├── views/                # GTK page widgets/tabs
+│       └── widgets/              # Reusable GTK components
 ├── scripts/
 │   ├── dump_character.py         # CLI: build and inspect a character snapshot
 │   ├── dump_graph.py             # CLI: list perks with their requirements
 │   ├── dump_items.py             # CLI: list parsed items with stat effects
 │   ├── dump_perks.py             # CLI: list parsed perks
 │   ├── audit_perks.py            # CLI: category audit (normal/trait/challenge/special/internal)
+│   ├── audit_skill_books.py      # CLI: skill-book copy counts + source buckets
 │   └── prototype_ui.py           # Interactive CLI prototype (Build/Progression/Library)
 └── tests/                        # pytest suite (unit + integration)
 ```
@@ -195,9 +215,14 @@ python -m scripts.dump_items --weapons --playable-only --format json
 python -m scripts.dump_graph
 python -m scripts.dump_character
 python -m scripts.audit_perks --check-wiki
+python -m scripts.audit_skill_books
+python -m scripts.plan_build --goal-file goal.json --start-file start.json
 
 # Interactive CLI prototype for Build / Progression / Library flows
 python -m scripts.prototype_ui [--esm /path/to/FalloutNV.esm]
+
+# GTK/Adwaita UI app (GNOME desktop session required)
+python -m fnv_planner.ui.app
 
 # Plugin stack mode (repeat --esm in load order; last wins)
 python -m scripts.dump_items \
@@ -205,6 +230,11 @@ python -m scripts.dump_items \
   --esm "/path/to/HonestHearts.esm" \
   --esm "/path/to/GunRunnersArsenal.esm" \
   --weapons --playable-only
+
+# Build planning from JSON specs (inline form)
+python -m scripts.plan_build \
+  --goal-json '{"required_perks":[4096],"target_level":20}' \
+  --start-json '{"sex":0,"special":{"strength":7,"perception":7,"endurance":6,"charisma":6,"intelligence":5,"agility":5,"luck":4},"tagged_skills":["guns","lockpick","speech"]}'
 ```
 
 ### `dump_items` weapon output notes

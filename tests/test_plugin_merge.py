@@ -1,9 +1,12 @@
 import pytest
+from pathlib import Path
 
 from fnv_planner.models.game_settings import GameSettings
 from fnv_planner.parser.plugin_merge import (
     VANILLA_PLUGIN_ORDER,
     default_vanilla_plugins,
+    effective_vanilla_level_cap,
+    has_non_base_level_cap_override,
     parse_dict_merged,
     parse_records_merged,
     resolve_plugins_for_cli,
@@ -104,3 +107,33 @@ def test_resolve_plugins_for_cli_default_mode(tmp_path):
     assert is_explicit is False
     assert [p.name for p in existing] == ["FalloutNV.esm", "HonestHearts.esm"]
     assert len(missing) == len(VANILLA_PLUGIN_ORDER) - 2
+
+
+def test_effective_vanilla_level_cap_all_story_dlcs():
+    paths = [
+        Path("FalloutNV.esm"),
+        Path("DeadMoney.esm"),
+        Path("HonestHearts.esm"),
+        Path("OldWorldBlues.esm"),
+        Path("LonesomeRoad.esm"),
+    ]
+    assert effective_vanilla_level_cap(paths, 30) == 50
+
+
+def test_effective_vanilla_level_cap_preserves_higher_modded_gmst():
+    paths = [Path("FalloutNV.esm"), Path("DeadMoney.esm")]
+    assert effective_vanilla_level_cap(paths, 75) == 75
+
+
+def test_effective_vanilla_level_cap_preserves_non_base_override():
+    paths = [Path("FalloutNV.esm"), Path("DeadMoney.esm"), Path("MyMod.esp")]
+    assert effective_vanilla_level_cap(paths, 40, has_non_base_cap_override=True) == 40
+
+
+def test_has_non_base_level_cap_override_detects_non_base(monkeypatch):
+    monkeypatch.setattr(
+        "fnv_planner.parser.plugin_merge.parse_all_gmsts",
+        lambda data: {"iMaxCharacterLevel": 30} if data == b"base" else {"iMaxCharacterLevel": 60},
+    )
+    paths = [Path("FalloutNV.esm"), Path("MyMod.esp")]
+    assert has_non_base_level_cap_override(paths, [b"base", b"mod"]) is True

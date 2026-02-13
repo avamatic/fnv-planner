@@ -7,6 +7,8 @@ from collections.abc import Callable, Iterable
 from pathlib import Path
 from typing import TypeVar
 
+from fnv_planner.parser.gmst_parser import parse_all_gmsts
+
 
 T = TypeVar("T")
 K = TypeVar("K")
@@ -23,6 +25,13 @@ VANILLA_PLUGIN_ORDER: tuple[str, ...] = (
     "ClassicPack.esm",
     "MercenaryPack.esm",
     "TribalPack.esm",
+)
+
+LEVEL_CAP_DLCS: tuple[str, ...] = (
+    "DeadMoney.esm",
+    "HonestHearts.esm",
+    "OldWorldBlues.esm",
+    "LonesomeRoad.esm",
 )
 
 
@@ -75,6 +84,46 @@ def resolve_plugins_for_cli(
             "No default plugins found. Pass --esm explicitly."
         )
     return existing, missing, False
+
+
+def effective_vanilla_level_cap(
+    plugin_paths: list[Path],
+    gmst_cap: int,
+    has_non_base_cap_override: bool = False,
+) -> int:
+    """Return effective vanilla level cap from loaded plugin names.
+
+    Fallout: New Vegas base cap is 30. Each story DLC increases the cap by +5.
+    If a non-base plugin explicitly overrides iMaxCharacterLevel, preserve GMST.
+    """
+    if has_non_base_cap_override:
+        return gmst_cap
+
+    names = {p.name.lower() for p in plugin_paths}
+    if "falloutnv.esm" not in names:
+        return gmst_cap
+    present_dlc = sum(1 for dlc in LEVEL_CAP_DLCS if dlc.lower() in names)
+    vanilla_runtime_cap = 30 + (present_dlc * 5)
+    return max(gmst_cap, vanilla_runtime_cap)
+
+
+def has_non_base_level_cap_override(
+    plugin_paths: list[Path],
+    plugin_datas: list[bytes],
+) -> bool:
+    """True if a non-FalloutNV plugin explicitly sets iMaxCharacterLevel."""
+    for path, data in zip(plugin_paths, plugin_datas):
+        try:
+            gmsts = parse_all_gmsts(data)
+        except Exception as exc:
+            if is_missing_grup_error(exc):
+                continue
+            raise
+        if "iMaxCharacterLevel" not in gmsts:
+            continue
+        if path.name.lower() != "falloutnv.esm":
+            return True
+    return False
 
 
 def parse_records_merged(
