@@ -44,8 +44,7 @@ def _special(
     st: int = 5, pe: int = 5, en: int = 5,
     ch: int = 5, in_: int = 5, ag: int = 5, lk: int = 5,
 ) -> dict[int, int]:
-    """Build a SPECIAL dict that sums to 33 by default (all 5s, minus 2 = 33)."""
-    # Caller is responsible for ensuring the sum equals the budget (33).
+    """Build a SPECIAL dict. Caller must ensure sum equals the budget (40)."""
     return {
         AV.STRENGTH: st, AV.PERCEPTION: pe, AV.ENDURANCE: en,
         AV.CHARISMA: ch, AV.INTELLIGENCE: in_, AV.AGILITY: ag,
@@ -54,8 +53,8 @@ def _special(
 
 
 def _balanced_special() -> dict[int, int]:
-    """SPECIAL summing to 33: six 5s + one 3."""
-    return _special(st=5, pe=5, en=5, ch=5, in_=5, ag=5, lk=3)
+    """SPECIAL summing to 40 with INT=5, AG=5, LCK=4 (keeps skill calcs stable)."""
+    return _special(st=7, pe=7, en=6, ch=6, in_=5, ag=5, lk=4)
 
 
 def _perk(
@@ -240,7 +239,7 @@ class TestSkillAllocation:
         e = _engine(config=BuildConfig(skill_cap=30))
         _setup_creation(e)
         e.set_target_level(5)
-        # Base Guns with AGI=5, LCK=3: initial = 2 + 5*2 + ceil(3*0.5) = 14
+        # Base Guns with AGI=5, LCK=4: initial = 2 + 5*2 + ceil(4*0.5) = 14
         # Tagged Guns: 14 + 15 = 29
         # Spending 2 more → 31 > cap 30
         with pytest.raises(ValueError, match="cap"):
@@ -328,7 +327,7 @@ class TestPerkSelection:
         e = _engine(perks=[perk])
         _setup_creation(e)
         e.set_target_level(4)
-        # Guns base: 2 + 5*2 + ceil(3*0.5) = 14, + tag 15 = 29
+        # Guns base: 2 + 5*2 + ceil(4*0.5) = 14, + tag 15 = 29
         # Need 1 more point to meet >= 30
         e.allocate_skill_points(2, {AV.GUNS: 1})
         e.select_perk(2, 0x2000)
@@ -592,23 +591,23 @@ class TestBuildConfig:
         _setup_creation(e)
         e.set_target_level(10)
 
-        # Guns tagged: base=29 (with LCK=3). Need 22 more to hit 51 > cap 50.
+        # Guns tagged: base=29 (with LCK=4). Need 22 more to hit 51 > cap 50.
         # Spend 13 at level 2, then try 9 more at level 3 → total 22 → skill=51.
         e.allocate_skill_points(2, {AV.GUNS: 13})
         with pytest.raises(ValueError, match="cap"):
             e.allocate_skill_points(3, {AV.GUNS: 9})
 
     def test_custom_special_budget(self):
-        """Custom SPECIAL budget (e.g. modded game with 40 points)."""
-        cfg = BuildConfig(special_budget=40)
+        """Custom SPECIAL budget (e.g. modded game with 45 points)."""
+        cfg = BuildConfig(special_budget=45)
         e = _engine(config=cfg)
 
-        # 33 points → too few for budget=40
+        # 40 points → too few for budget=45
         with pytest.raises(ValueError, match="budget"):
             e.set_special(_balanced_special())
 
-        # 40 points → valid
-        e.set_special(_special(st=6, pe=6, en=6, ch=6, in_=6, ag=6, lk=4))
+        # 45 points → valid
+        e.set_special(_special(st=7, pe=7, en=7, ch=7, in_=7, ag=5, lk=5))
 
 
 # ===========================================================================
@@ -732,7 +731,7 @@ def test_educated_via_engine(esm_gmst, esm_graph, perk_by_edid):
     educated = perk_by_edid["Educated"]
 
     e = BuildEngine(esm_gmst, esm_graph)
-    e.set_special(_special(st=5, pe=5, en=5, ch=5, in_=4, ag=5, lk=4))
+    e.set_special(_special(st=6, pe=6, en=6, ch=6, in_=4, ag=6, lk=6))
     e.set_sex(0)
     e.set_tagged_skills({AV.GUNS, AV.LOCKPICK, AV.SPEECH})
     e.set_target_level(4)
@@ -748,7 +747,7 @@ def test_strong_back_via_engine(esm_gmst, esm_graph, perk_by_edid):
     sb = perk_by_edid["StrongBack"]
 
     e = BuildEngine(esm_gmst, esm_graph)
-    e.set_special(_special(st=5, pe=5, en=5, ch=5, in_=5, ag=5, lk=3))
+    e.set_special(_special(st=6, pe=6, en=6, ch=6, in_=5, ag=5, lk=6))
     e.set_sex(0)
     e.set_tagged_skills({AV.GUNS, AV.LOCKPICK, AV.SPEECH})
     e.set_target_level(8)
@@ -771,7 +770,7 @@ def test_trait_selection_from_esm(esm_gmst, esm_graph):
 def test_full_build_to_max(esm_gmst, esm_graph):
     """Build to max level, validate clean (no perk selection, just points)."""
     e = BuildEngine(esm_gmst, esm_graph)
-    e.set_special(_special(st=5, pe=5, en=5, ch=5, in_=9, ag=3, lk=1))
+    e.set_special(_special(st=5, pe=5, en=5, ch=5, in_=9, ag=5, lk=6))
     e.set_sex(0)
     e.set_tagged_skills({AV.GUNS, AV.LOCKPICK, AV.SPEECH})
     max_lv = e.max_level

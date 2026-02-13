@@ -15,6 +15,6 @@ class BuildConfig:
     skill_cap: int = 100           # Max base skill value (before equipment)
     max_traits: int = 2
     num_tagged_skills: int = 3
-    special_budget: int = 33       # Total SPECIAL points at creation
+    special_budget: int = 40       # Total SPECIAL points at creation
     special_min: int = 1
     special_max: int = 10

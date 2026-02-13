@@ -7,7 +7,12 @@ name = "fnv-planner"
 version = "0.1.0"
 description = "Mod-aware Fallout: New Vegas character build planner"
 requires-python = ">=3.12"
-dependencies = []
+dependencies = [
+    "PyGObject>=3.50",
+]
+
+[project.scripts]
+fnv-planner = "fnv_planner.gui.__main__:main"
 
 [project.optional-dependencies]
 dev = ["pytest>=8.0"]
