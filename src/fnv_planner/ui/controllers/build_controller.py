@@ -10,6 +10,7 @@ from fnv_planner.models.constants import ACTOR_VALUE_NAMES, SKILL_INDICES, SPECI
 from fnv_planner.models.derived_stats import CharacterStats
 from fnv_planner.models.perk import Perk
 from fnv_planner.optimizer.planner import plan_build
+from fnv_planner.optimizer.planner import _infer_perk_skill_effects
 from fnv_planner.optimizer.specs import GoalSpec, RequirementSpec, StartingConditions
 from fnv_planner.parser.perk_classification import classify_perk
 from fnv_planner.ui.state import UiState
@@ -53,10 +54,19 @@ class BuildController:
     _last_skill_book_points_by_level: dict[int, dict[int, int]] = field(default_factory=dict)
     _last_perk_selection_reasons: dict[int, str] = field(default_factory=dict)
     _last_book_dependency_warning: str | None = None
+    _inferred_effects_by_id: dict[int, object] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
         if self.requests is None:
             self.requests = []
+        self._inferred_effects_by_id = {
+            int(perk_id): _infer_perk_skill_effects(
+                perk,
+                linked_spell_names_by_form=self.linked_spell_names_by_form,
+                linked_spell_stat_bonuses_by_form=self.linked_spell_stat_bonuses_by_form,
+            )
+            for perk_id, perk in self.perks.items()
+        }
         self._recompute_plan()
         self._sync_state()
         self.current_level = min(max(1, self.current_level), self.state.target_level)
@@ -123,6 +133,38 @@ class BuildController:
         if reason:
             return reason
         return None
+
+    def flat_skill_bonuses_by_level(self) -> dict[int, dict[int, int]]:
+        """Cumulative inferred flat skill bonuses active at each level."""
+        by_level: dict[int, dict[int, int]] = {}
+        active_perks: list[int] = []
+        active_traits = [int(tid) for tid in self.engine.state.traits]
+        for level in range(1, int(self.engine.state.target_level) + 1):
+            if level == 1:
+                active_perks.extend(active_traits)
+            else:
+                plan = self.engine.state.level_plans.get(int(level))
+                if plan is not None and plan.perk is not None:
+                    active_perks.append(int(plan.perk))
+
+            all_skills = 0
+            per_skill: dict[int, int] = {}
+            for perk_id in active_perks:
+                effects = self._inferred_effects_by_id.get(int(perk_id))
+                if effects is None:
+                    continue
+                all_skills += int(getattr(effects, "all_skills_bonus", 0))
+                for av, bonus in getattr(effects, "per_skill_bonus", {}).items():
+                    iav = int(av)
+                    per_skill[iav] = per_skill.get(iav, 0) + int(bonus)
+
+            level_bonuses: dict[int, int] = {}
+            for av in SKILL_INDICES:
+                total = int(per_skill.get(int(av), 0)) + all_skills
+                if total != 0:
+                    level_bonuses[int(av)] = total
+            by_level[int(level)] = level_bonuses
+        return by_level
 
     def perk_reasons(self) -> dict[int, str]:
         return dict(self._last_perk_selection_reasons)

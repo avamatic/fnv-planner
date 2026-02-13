@@ -91,6 +91,9 @@ class MainWindow(Adw.ApplicationWindow):
             self._build_controller.skill_book_usage_by_level(),
             self._build_controller.skill_book_points_by_level(),
         )
+        self._progression_controller.set_flat_skill_bonus_by_level(
+            self._build_controller.flat_skill_bonuses_by_level()
+        )
         self._progression_page = ProgressionPage(self._progression_controller)
         self._library_page = LibraryPage(self._library_controller)
 
@@ -150,6 +153,9 @@ class MainWindow(Adw.ApplicationWindow):
             self._build_controller.skill_book_rows(),
             self._build_controller.skill_book_usage_by_level(),
             self._build_controller.skill_book_points_by_level(),
+        )
+        self._progression_controller.set_flat_skill_bonus_by_level(
+            self._build_controller.flat_skill_bonuses_by_level()
         )
         self._build_page.refresh()
         self._progression_page.refresh()

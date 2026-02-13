@@ -28,6 +28,7 @@ class ProgressionController:
     skill_book_rows_data: list[tuple[str, int, int]] | None = None
     skill_book_usage_by_level: dict[int, dict[int, int]] | None = None
     skill_book_points_by_level: dict[int, dict[int, int]] | None = None
+    flat_skill_bonus_by_level: dict[int, dict[int, int]] | None = None
 
     def __post_init__(self) -> None:
         self._sync_bounds()
@@ -148,6 +149,15 @@ class ProgressionController:
             for level, per_level in (points_by_level or {}).items()
         }
 
+    def set_flat_skill_bonus_by_level(
+        self,
+        by_level: dict[int, dict[int, int]] | None,
+    ) -> None:
+        self.flat_skill_bonus_by_level = {
+            int(level): {int(av): int(points) for av, points in per_level.items()}
+            for level, per_level in (by_level or {}).items()
+        }
+
     def skill_books_summary(self) -> str:
         rows = self.skill_book_rows_data or []
         if self.skill_books_needed <= 0 and self.skill_books_available <= 0 and not rows:
@@ -222,6 +232,13 @@ class ProgressionController:
             if int(av) not in adjusted:
                 continue
             adjusted[int(av)] = int(adjusted[int(av)]) + int(bonus)
+        flats = self._flat_skill_bonus_at_level(level)
+        for av, bonus in flats.items():
+            if int(av) not in adjusted:
+                continue
+            adjusted[int(av)] = int(adjusted[int(av)]) + int(bonus)
+        for av in list(adjusted):
+            adjusted[int(av)] = max(0, min(100, int(adjusted[int(av)])))
         return adjusted
 
     def actor_value_description(self, actor_value: int) -> str | None:
@@ -249,3 +266,7 @@ class ProgressionController:
             for av, points in points_by_level[lv].items():
                 cumulative[int(av)] = cumulative.get(int(av), 0) + max(0, int(points))
         return cumulative
+
+    def _flat_skill_bonus_at_level(self, level: int) -> dict[int, int]:
+        by_level = self.flat_skill_bonus_by_level or {}
+        return {int(av): int(points) for av, points in by_level.get(int(level), {}).items()}
