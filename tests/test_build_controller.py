@@ -179,7 +179,7 @@ def test_apply_real_build_perk_preset_missing_file():
     assert "not found" in message.lower()
 
 
-def test_implant_points_by_level_reports_creation_implant_allocation():
+def test_implant_points_by_level_reports_deferred_implant_allocation():
     implant = Perk(
         form_id=0x9101,
         editor_id="PerceptionImplant",
@@ -195,4 +195,4 @@ def test_implant_points_by_level_reports_creation_implant_allocation():
     ok, message = c.add_actor_value_request(int(AV.PERCEPTION), 8, reason="gate")
     assert ok is True
     assert message is None
-    assert c.implant_points_by_level() == {2: {int(AV.PERCEPTION): 1}}
+    assert c.implant_points_by_level() == {c.target_level: {int(AV.PERCEPTION): 1}}

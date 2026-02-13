@@ -698,6 +698,7 @@ def _allocate_implant_special_points(
     if not implant_targets:
         return
 
+    due_level = 2 if pre_level_two else int(level)
     deficits = _special_deficits(
         engine,
         level=level,
@@ -705,8 +706,22 @@ def _allocate_implant_special_points(
         requirements=requirements,
         perks_by_id=perks_by_id,
         target_level=engine.state.target_level,
+        due_by_level=due_level,
     )
-    if not deficits:
+    int_deficit = 0.0
+    if pre_level_two:
+        all_deficits = _special_deficits(
+            engine,
+            level=level,
+            pending_required=pending_required,
+            requirements=requirements,
+            perks_by_id=perks_by_id,
+            target_level=engine.state.target_level,
+            due_by_level=None,
+        )
+        int_deficit = float(all_deficits.get(int(ActorValue.INTELLIGENCE), 0.0))
+
+    if not deficits and int_deficit <= 0:
         return
 
     allocation: dict[int, int] = {}
@@ -721,7 +736,14 @@ def _allocate_implant_special_points(
         unmet = engine.unmet_requirements_for_perk(perk_id, level=unmet_level)
         if unmet:
             continue
-        if deficits.get(target_av, 0.0) <= 0:
+        needed_now = float(deficits.get(target_av, 0.0)) > 0.0
+        if (
+            pre_level_two
+            and int(target_av) == int(ActorValue.INTELLIGENCE)
+            and int_deficit > 0.0
+        ):
+            needed_now = True
+        if not needed_now:
             continue
 
         current_level = 1 if pre_level_two else level
@@ -731,7 +753,7 @@ def _allocate_implant_special_points(
             continue
 
         allocation[target_av] = planned + 1
-        deficits[target_av] = max(0.0, deficits[target_av] - 1.0)
+        deficits[target_av] = max(0.0, float(deficits.get(target_av, 0.0)) - 1.0)
         used_implant_ids.add(perk_id)
 
     if not allocation:
@@ -808,6 +830,7 @@ def _special_deficits(
     requirements: list[RequirementSpec],
     perks_by_id: dict[int, Perk],
     target_level: int,
+    due_by_level: int | None = None,
 ) -> dict[int, float]:
     current = engine.stats_at(level).effective_special
     deficits: dict[int, float] = {}
@@ -820,7 +843,10 @@ def _special_deficits(
         deadlines = [lv for lv in perk_levels if lv >= perk.min_level]
         if not deadlines:
             continue
-        urgency = float(1 + max(0, 4 - (deadlines[0] - level)))
+        deadline = int(deadlines[0])
+        if due_by_level is not None and deadline > int(due_by_level):
+            continue
+        urgency = float(1 + max(0, 4 - (deadline - level)))
         for req in perk.skill_requirements:
             av = int(req.actor_value)
             if av not in SPECIAL_INDICES:
@@ -845,6 +871,8 @@ def _special_deficits(
         if threshold <= have:
             continue
         deadline = _requirement_deadline(req, target_level)
+        if due_by_level is not None and int(deadline) > int(due_by_level):
+            continue
         urgency = float(1 + max(0, 4 - (deadline - level)))
         importance = max(0.2, float(req.priority) / 100.0)
         deficits[av] = deficits.get(av, 0.0) + float((threshold - have) * urgency * importance)
