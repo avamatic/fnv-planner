@@ -101,16 +101,21 @@ def _build_clauses_from_reqs(reqs: list[Requirement]) -> list[RequirementClause]
 
 def _build_requirement_set(perk: Perk) -> RequirementSet:
     """Convert a Perk's typed requirement lists into a RequirementSet (CNF)."""
-    clauses: list[RequirementClause] = []
+    # Prefer ordered requirements when available so OR groups can span
+    # different requirement types in original CTDA order.
+    if perk.ordered_requirements:
+        clauses = _build_clauses_from_reqs(perk.ordered_requirements)
+    else:
+        clauses = []
+        # Backward-compatible fallback for synthetic/unit-test perks.
+        # Each typed list is grouped independently.
+        clauses.extend(_build_clauses_from_reqs(perk.skill_requirements))
+        clauses.extend(_build_clauses_from_reqs(perk.perk_requirements))
+        clauses.extend(_build_clauses_from_reqs(perk.level_requirements))
 
-    # Each typed list is grouped independently.
-    clauses.extend(_build_clauses_from_reqs(perk.skill_requirements))
-    clauses.extend(_build_clauses_from_reqs(perk.perk_requirements))
-    clauses.extend(_build_clauses_from_reqs(perk.level_requirements))
-
-    # Sex requirement is always a single-element clause (never OR'd).
-    if perk.sex_requirement is not None:
-        clauses.append(RequirementClause([perk.sex_requirement]))
+        # Sex requirement is always a single-element clause (never OR'd).
+        if perk.sex_requirement is not None:
+            clauses.append(RequirementClause([perk.sex_requirement]))
 
     return RequirementSet(
         clauses=clauses,

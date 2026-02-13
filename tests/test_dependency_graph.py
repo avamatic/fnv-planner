@@ -53,6 +53,9 @@ def _perk(
     perk_requirements: list[PerkRequirement] | None = None,
     sex_requirement: SexRequirement | None = None,
     level_requirements: list[LevelRequirement] | None = None,
+    ordered_requirements: list[
+        SkillRequirement | PerkRequirement | LevelRequirement | SexRequirement
+    ] | None = None,
 ) -> Perk:
     return Perk(
         form_id=form_id,
@@ -68,6 +71,7 @@ def _perk(
         perk_requirements=perk_requirements or [],
         sex_requirement=sex_requirement,
         level_requirements=level_requirements or [],
+        ordered_requirements=ordered_requirements or [],
     )
 
 
@@ -377,6 +381,23 @@ class TestEligibility:
         graph = DependencyGraph.build([prereq, perk])
         char = Character(level=2, traits=[0x2000])
         stats = _default_stats()
+        assert graph.can_take_perk(0x3000, char, stats)
+
+    def test_cross_type_or_semantics_preserved_with_ordered_requirements(self):
+        """Strength >= 8 OR HasPerk(X) should pass when HasPerk(X) is true."""
+        prereq = _perk(form_id=0x2000, editor_id="Prereq", min_level=1)
+        strength_req = SkillRequirement(AV.STRENGTH, "Strength", ">=", 8)
+        perk_req = PerkRequirement(0x2000, rank=1, is_or=True)
+        perk = _perk(
+            form_id=0x3000,
+            min_level=2,
+            skill_requirements=[strength_req],
+            perk_requirements=[perk_req],
+            ordered_requirements=[strength_req, perk_req],
+        )
+        graph = DependencyGraph.build([prereq, perk])
+        char = Character(level=2, perks={2: [0x2000]})
+        stats = _default_stats(strength=5)
         assert graph.can_take_perk(0x3000, char, stats)
 
 

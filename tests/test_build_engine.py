@@ -19,7 +19,9 @@ from fnv_planner.graph.dependency_graph import DependencyGraph
 from fnv_planner.models.character import Character
 from fnv_planner.models.constants import ActorValue, SPECIAL_INDICES
 from fnv_planner.models.derived_stats import CharacterStats, compute_stats
+from fnv_planner.models.effect import StatEffect
 from fnv_planner.models.game_settings import GameSettings
+from fnv_planner.models.item import Armor
 from fnv_planner.models.perk import (
     LevelRequirement,
     Perk,
@@ -437,6 +439,57 @@ class TestQueries:
     def test_max_level(self):
         e = _engine()
         assert e.max_level == 50
+
+    def test_materialize_includes_equipment_from_state(self):
+        e = _engine()
+        _setup_creation(e)
+        e.set_equipment(slot=1, item_form_id=0xABCD)
+        char = e.materialize(1)
+        assert char.equipment == {1: 0xABCD}
+
+    def test_stats_at_applies_equipment_effects_from_state(self):
+        e = _engine()
+        _setup_creation(e)
+        armor = Armor(
+            form_id=0x100,
+            editor_id="ArmorStrength",
+            name="Strength Armor",
+            value=0,
+            health=0,
+            weight=0.0,
+            damage_threshold=0.0,
+            equipment_slot=0,
+            enchantment_form_id=None,
+            is_playable=True,
+            stat_effects=[
+                StatEffect(
+                    actor_value=AV.STRENGTH,
+                    actor_value_name="Strength",
+                    magnitude=2.0,
+                ),
+            ],
+        )
+        e.set_equipment(slot=0, item_form_id=0x100)
+        stats = e.stats_at(1, armors={0x100: armor})
+        assert stats.effective_special[AV.STRENGTH] == _balanced_special()[AV.STRENGTH] + 2
+
+    def test_set_equipment_bulk_replaces_existing_equipment(self):
+        e = _engine()
+        _setup_creation(e)
+        e.set_equipment(slot=0, item_form_id=0x100)
+        e.set_equipment(slot=1, item_form_id=0x101)
+        e.set_equipment_bulk({2: 0x202})
+        assert e.materialize(1).equipment == {2: 0x202}
+
+    def test_set_equipment_bulk_invalidates_cache_once_for_all_changes(self):
+        e = _engine()
+        _setup_creation(e)
+        # Prime cache.
+        _ = e.stats_at(1)
+        assert 1 in e._stats_cache
+        # A single bulk replace should invalidate previously cached level 1 stats.
+        e.set_equipment_bulk({0: 0x100, 1: 0x101, 2: 0x102})
+        assert 1 not in e._stats_cache
 
     def test_state_property(self):
         e = _engine()

@@ -53,6 +53,7 @@ class BuildState:
     special: dict[int, int] = field(default_factory=dict)
     tagged_skills: set[int] = field(default_factory=set)
     traits: list[int] = field(default_factory=list)
+    equipment: dict[int, int] = field(default_factory=dict)
     level_plans: dict[int, LevelPlan] = field(default_factory=dict)
     target_level: int = 1
 
@@ -164,6 +165,31 @@ class BuildEngine:
 
     def set_special(self, special: dict[int, int]) -> None:
         """Set SPECIAL allocation. Validates budget, range, and keys."""
+        self._validate_special_map(special)
+        total = sum(special.values())
+        if total != self._config.special_budget:
+            raise ValueError(
+                f"SPECIAL budget must be {self._config.special_budget}, got {total}"
+            )
+        self._state.special = dict(special)
+        self._invalidate_from(1)
+
+    def set_special_working(self, special: dict[int, int]) -> None:
+        """Set SPECIAL allocation for incremental UIs.
+
+        Validates key/range constraints and enforces total <= budget.
+        """
+        self._validate_special_map(special)
+        total = sum(special.values())
+        if total > self._config.special_budget:
+            raise ValueError(
+                f"SPECIAL budget exceeded: {total} > {self._config.special_budget}"
+            )
+        self._state.special = dict(special)
+        self._invalidate_from(1)
+
+    def _validate_special_map(self, special: dict[int, int]) -> None:
+        """Validate SPECIAL keys and per-stat range."""
         cfg = self._config
         if set(special.keys()) != SPECIAL_INDICES:
             raise ValueError(
@@ -177,13 +203,6 @@ class BuildEngine:
                     f"SPECIAL stat {av} = {val} is out of range "
                     f"[{cfg.special_min}, {cfg.special_max}]"
                 )
-        total = sum(special.values())
-        if total != cfg.special_budget:
-            raise ValueError(
-                f"SPECIAL budget must be {cfg.special_budget}, got {total}"
-            )
-        self._state.special = dict(special)
-        self._invalidate_from(1)
 
     def set_tagged_skills(self, skills: set[int]) -> None:
         """Set tagged skills. Validates count and AV indices."""
@@ -197,6 +216,21 @@ class BuildEngine:
                 raise ValueError(f"Invalid skill AV index: {av}")
         self._state.tagged_skills = set(skills)
         self._invalidate_from(1)
+
+    def toggle_tagged_skill(self, av: int) -> bool:
+        """Toggle one tagged skill. Returns True if the toggle was applied."""
+        if av not in _VALID_SKILLS:
+            return False
+        tags = self._state.tagged_skills
+        if av in tags:
+            tags.discard(av)
+            self._invalidate_from(1)
+            return True
+        if len(tags) >= self._config.num_tagged_skills:
+            return False
+        tags.add(av)
+        self._invalidate_from(1)
+        return True
 
     def set_traits(self, traits: list[int]) -> None:
         """Set traits (0 to max_traits). Must be available in the graph."""
@@ -212,6 +246,41 @@ class BuildEngine:
             if t not in available:
                 raise ValueError(f"Trait {t:#x} is not available")
         self._state.traits = list(traits)
+        self._invalidate_from(1)
+
+    def toggle_trait(self, trait_id: int) -> bool:
+        """Toggle one trait. Returns True if the toggle was applied."""
+        traits = self._state.traits
+        if trait_id in traits:
+            traits.remove(trait_id)
+            self._invalidate_from(1)
+            return True
+        available = set(self._graph.available_traits())
+        if trait_id not in available:
+            return False
+        if len(traits) >= self._config.max_traits:
+            return False
+        traits.append(trait_id)
+        self._invalidate_from(1)
+        return True
+
+    def set_equipment(self, slot: int, item_form_id: int) -> None:
+        """Equip an item form ID into a slot index."""
+        self._state.equipment[slot] = item_form_id
+        self._invalidate_from(1)
+
+    def set_equipment_bulk(self, equipment: dict[int, int]) -> None:
+        """Replace all equipped items in one atomic update.
+
+        Useful for UI flows that apply multiple slot changes at once and want
+        a single cache invalidation.
+        """
+        self._state.equipment = dict(equipment)
+        self._invalidate_from(1)
+
+    def clear_equipment_slot(self, slot: int) -> None:
+        """Unequip whatever is currently in *slot*."""
+        self._state.equipment.pop(slot, None)
         self._invalidate_from(1)
 
     # --- Target level ------------------------------------------------------
@@ -348,8 +417,7 @@ class BuildEngine:
             if plan and plan.perk is not None:
                 perks.setdefault(lv, []).append(plan.perk)
 
-        # Build equipment dict — empty unless armors/weapons provided.
-        equipment: dict[int, int] = {}
+        equipment = dict(self._state.equipment)
 
         return Character(
             name=self._state.name,

@@ -75,6 +75,9 @@ def parse_perk(record: Record) -> Perk:
     sex_req: SexRequirement | None = None
     level_reqs: list[LevelRequirement] = []
     raw_conds: list[RawCondition] = []
+    ordered_reqs: list[
+        SkillRequirement | PerkRequirement | LevelRequirement | SexRequirement
+    ] = []
 
     # Track whether we've hit the first PRKE — after that, CTDAs are effect conditions
     seen_prke = False
@@ -111,13 +114,15 @@ def parse_perk(record: Record) -> Perk:
             if func == ConditionFunction.GET_PERMANENT_ACTOR_VALUE:
                 av = ctda["param1"]
                 if av in SPECIAL_INDICES or av in SKILL_INDICES:
-                    skill_reqs.append(SkillRequirement(
+                    req = SkillRequirement(
                         actor_value=av,
                         name=ACTOR_VALUE_NAMES.get(av, f"AV{av}"),
                         operator=ctda["operator_symbol"],
                         value=int(round(ctda["value"])),
                         is_or=ctda["is_or"],
-                    ))
+                    )
+                    skill_reqs.append(req)
+                    ordered_reqs.append(req)
                 else:
                     raw_conds.append(RawCondition(
                         function=func,
@@ -129,24 +134,30 @@ def parse_perk(record: Record) -> Perk:
                     ))
 
             elif func == ConditionFunction.HAS_PERK:
-                perk_reqs.append(PerkRequirement(
+                req = PerkRequirement(
                     perk_form_id=ctda["param1"],
                     rank=int(round(ctda["value"])),
                     is_or=ctda["is_or"],
-                ))
+                )
+                perk_reqs.append(req)
+                ordered_reqs.append(req)
 
             elif func == ConditionFunction.GET_IS_SEX:
-                sex_req = SexRequirement(
+                req = SexRequirement(
                     sex=ctda["param1"],
                     is_or=ctda["is_or"],
                 )
+                sex_req = req
+                ordered_reqs.append(req)
 
             elif func == ConditionFunction.GET_LEVEL:
-                level_reqs.append(LevelRequirement(
+                req = LevelRequirement(
                     operator=ctda["operator_symbol"],
                     value=int(round(ctda["value"])),
                     is_or=ctda["is_or"],
-                ))
+                )
+                level_reqs.append(req)
+                ordered_reqs.append(req)
 
             else:
                 raw_conds.append(RawCondition(
@@ -173,6 +184,7 @@ def parse_perk(record: Record) -> Perk:
         sex_requirement=sex_req,
         level_requirements=level_reqs,
         raw_conditions=raw_conds,
+        ordered_requirements=ordered_reqs,
     )
 
 

@@ -80,3 +80,8 @@ class Perk:
     sex_requirement: SexRequirement | None = None
     level_requirements: list[LevelRequirement] = field(default_factory=list)
     raw_conditions: list[RawCondition] = field(default_factory=list)
+    # Ordered typed requirements in original CTDA order (pre-PRKE).
+    # Preserves cross-type OR group semantics.
+    ordered_requirements: list[
+        SkillRequirement | PerkRequirement | LevelRequirement | SexRequirement
+    ] = field(default_factory=list)
