@@ -16,3 +16,4 @@ class Spell:
     editor_id: str
     name: str
     effects: list[SpellEffect] = field(default_factory=list)
+    has_conditions: bool = False

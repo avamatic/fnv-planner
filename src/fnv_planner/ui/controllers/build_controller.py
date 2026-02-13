@@ -493,6 +493,26 @@ class BuildController:
         rows.sort(key=lambda x: x[0].lower())
         return rows
 
+    def selected_perks_rows(self) -> list[tuple[str, int, str]]:
+        direct_requested = self.selected_perk_ids()
+        has_max_skills = any(r.kind == "max_skills" for r in self.requests or [])
+        rows: list[tuple[str, int, str]] = []
+        for level in sorted(self.engine.state.level_plans):
+            plan = self.engine.state.level_plans[level]
+            if plan.perk is None:
+                continue
+            perk_id = int(plan.perk)
+            perk = self.perks.get(perk_id)
+            name = perk.name if perk is not None else f"{perk_id:#x}"
+            if perk_id in direct_requested:
+                source = "Direct request"
+            elif has_max_skills:
+                source = "Auto (Max Skills)"
+            else:
+                source = "Auto (Derived)"
+            rows.append((name, int(level), source))
+        return rows
+
     def _sync_state(self) -> None:
         self.state.target_level = self.engine.state.target_level
         self.state.max_level = self.engine.max_level

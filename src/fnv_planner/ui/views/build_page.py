@@ -146,6 +146,18 @@ class BuildPage(Gtk.Box):
         self._traits_list = Gtk.ListBox()
         traits_box.append(self._traits_list)
 
+        perks_frame = Gtk.Frame(label="Perks")
+        perks_frame.set_hexpand(True)
+        stats_row.append(perks_frame)
+        perks_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
+        perks_box.set_margin_top(10)
+        perks_box.set_margin_bottom(10)
+        perks_box.set_margin_start(10)
+        perks_box.set_margin_end(10)
+        perks_frame.set_child(perks_box)
+        self._perks_list = Gtk.ListBox()
+        perks_box.append(self._perks_list)
+
         self._budget_label = Gtk.Label(xalign=0)
         left.append(self._budget_label)
 
@@ -267,6 +279,7 @@ class BuildPage(Gtk.Box):
                 f"SPECIAL used {used}/{self._controller.special_budget}  remaining {remaining}"
             )
             self._render_traits()
+            self._render_perks()
             self._render_skill_books()
             self._render_priority_requests()
 
@@ -339,6 +352,25 @@ class BuildPage(Gtk.Box):
             row = Gtk.ListBoxRow()
             row.set_child(Gtk.Label(label=f"{name}  [{source}]", xalign=0))
             self._traits_list.append(row)
+
+    def _render_perks(self) -> None:
+        child = self._perks_list.get_first_child()
+        while child is not None:
+            next_child = child.get_next_sibling()
+            self._perks_list.remove(child)
+            child = next_child
+
+        rows = self._controller.selected_perks_rows()
+        if not rows:
+            row = Gtk.ListBoxRow()
+            row.set_child(Gtk.Label(label="No perks selected.", xalign=0))
+            self._perks_list.append(row)
+            return
+
+        for name, level, source in rows:
+            row = Gtk.ListBoxRow()
+            row.set_child(Gtk.Label(label=f"L{level} {name}  [{source}]", xalign=0, wrap=True))
+            self._perks_list.append(row)
 
     def _render_rationale(self) -> None:
         child = self._rationale_list.get_first_child()

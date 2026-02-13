@@ -18,11 +18,16 @@ def parse_spell(record: Record) -> Spell:
     name = ""
     effects: list[SpellEffect] = []
     pending_mgef_id: int | None = None
+    has_conditions = False
     for sub in record.subrecords:
         if sub.type == "EDID":
             editor_id = sub.data.rstrip(b"\x00").decode("utf-8", errors="replace")
         elif sub.type == "FULL":
             name = sub.data.rstrip(b"\x00").decode("utf-8", errors="replace")
+        elif sub.type == "CTDA":
+            # Keep condition semantics conservative for planning:
+            # any CTDA means effect is situational, not guaranteed baseline.
+            has_conditions = True
         elif sub.type == "EFID" and len(sub.data) >= 4:
             pending_mgef_id = struct.unpack_from("<I", sub.data, 0)[0]
         elif sub.type == "EFIT" and pending_mgef_id is not None and len(sub.data) >= 20:
@@ -41,6 +46,7 @@ def parse_spell(record: Record) -> Spell:
         editor_id=editor_id,
         name=name or editor_id,
         effects=effects,
+        has_conditions=has_conditions,
     )
 
 
@@ -49,12 +55,24 @@ def parse_all_spells(data: bytes) -> list[Spell]:
     return [parse_spell(r) for r in records]
 
 
-def linked_spell_names_by_form(plugin_datas: list[bytes]) -> dict[int, str]:
+def linked_spell_names_by_form(
+    plugin_datas: list[bytes],
+    *,
+    include_conditional: bool = False,
+) -> dict[int, str]:
     spells = parse_records_merged(plugin_datas, parse_all_spells, missing_group_ok=True)
-    return {int(s.form_id): s.name for s in spells if s.name}
+    return {
+        int(s.form_id): s.name
+        for s in spells
+        if s.name and (include_conditional or not s.has_conditions)
+    }
 
 
-def linked_spell_stat_bonuses_by_form(plugin_datas: list[bytes]) -> dict[int, dict[int, float]]:
+def linked_spell_stat_bonuses_by_form(
+    plugin_datas: list[bytes],
+    *,
+    include_conditional: bool = False,
+) -> dict[int, dict[int, float]]:
     """Resolve SPEL EFID/EFIT entries into actor-value bonus maps."""
     spells = parse_records_merged(plugin_datas, parse_all_spells, missing_group_ok=True)
     mgefs: dict[int, MagicEffect] = {
@@ -62,6 +80,8 @@ def linked_spell_stat_bonuses_by_form(plugin_datas: list[bytes]) -> dict[int, di
     }
     out: dict[int, dict[int, float]] = {}
     for spell in spells:
+        if spell.has_conditions and not include_conditional:
+            continue
         bonuses: dict[int, float] = {}
         for eff in spell.effects:
             mgef = mgefs.get(int(eff.mgef_form_id))
