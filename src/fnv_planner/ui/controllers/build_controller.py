@@ -63,6 +63,7 @@ class BuildController:
     _last_book_dependency_warning: str | None = None
     _inferred_effects_by_id: dict[int, object] = field(default_factory=dict)
     quick_perk_preset_path: Path = Path("config/quick_perks.txt")
+    real_build_perk_preset_path: Path = Path("config/real_build_perks.txt")
 
     def __post_init__(self) -> None:
         if self.requests is None:
@@ -456,14 +457,19 @@ class BuildController:
         self._notify_changed()
 
     def apply_quick_perk_preset(self) -> tuple[bool, str | None]:
-        path = self.quick_perk_preset_path
+        return self._apply_perk_preset(self.quick_perk_preset_path, "quick perk")
+
+    def apply_real_build_perk_preset(self) -> tuple[bool, str | None]:
+        return self._apply_perk_preset(self.real_build_perk_preset_path, "real build perk")
+
+    def _apply_perk_preset(self, path: Path, label: str) -> tuple[bool, str | None]:
         if not path.exists():
-            return False, f"Quick perk preset not found: {path}"
+            return False, f"{label.title()} preset not found: {path}"
 
         try:
             lines = path.read_text().splitlines()
         except OSError as exc:
-            return False, f"Could not read quick perk preset: {exc}"
+            return False, f"Could not read {label} preset: {exc}"
 
         tokens = [
             line.strip()
@@ -472,7 +478,7 @@ class BuildController:
         ]
         if not tokens:
             self.set_perk_requests(set())
-            return True, "Quick perk preset is empty; cleared perk requests."
+            return True, f"{label.title()} preset is empty; cleared perk requests."
 
         by_edid = {p.editor_id.lower(): int(p.form_id) for p in self.perks.values()}
         by_name = {p.name.lower(): int(p.form_id) for p in self.perks.values()}
@@ -505,11 +511,11 @@ class BuildController:
         if unresolved:
             return (
                 False,
-                "Applied quick perk preset with unresolved entries: "
+                f"Applied {label} preset with unresolved entries: "
                 + ", ".join(unresolved[:5])
                 + (" ..." if len(unresolved) > 5 else ""),
             )
-        return True, f"Applied quick perk preset ({len(selected)} perks)."
+        return True, f"Applied {label} preset ({len(selected)} perks)."
 
     def add_trait_request_by_query(self, query: str) -> tuple[bool, str | None]:
         text = query.strip().lower()

@@ -1,0 +1,7 @@
+# Real build perk preset for Build tab "Apply Real Build Perk List" button.
+# One entry per line. Accepted formats:
+# - Editor ID (recommended), e.g. Educated
+# - Exact perk name, e.g. Better Criticals
+# - Form ID, e.g. 0x00031DBA
+#
+# Replace this template with your real build list.
