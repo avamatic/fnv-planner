@@ -17,9 +17,9 @@ from fnv_planner.models.derived_stats import compute_stats
 from fnv_planner.models.game_settings import GameSettings
 from fnv_planner.parser.perk_parser import parse_all_perks
 from fnv_planner.parser.plugin_merge import (
-    default_vanilla_plugins,
     load_plugin_bytes,
     parse_records_merged,
+    resolve_plugins_for_cli,
 )
 
 
@@ -45,22 +45,16 @@ def main():
                         help="Plugin path; repeat in load order (last wins).")
     args = parser.parse_args()
 
-    if args.esm:
-        esm_paths = args.esm
-        missing = [p for p in esm_paths if not p.exists()]
-        if missing:
-            for p in missing:
-                print(f"ESM not found: {p}")
-            return
-    else:
-        esm_paths, missing = default_vanilla_plugins(DEFAULT_ESM)
-        if missing:
-            print("Warning: some default vanilla plugins are missing and will be skipped:")
-            for p in missing:
-                print(f"  - {p.name}")
-        if not esm_paths:
-            print("Error: no default plugins found. Pass --esm explicitly.")
-            return
+    try:
+        esm_paths, missing, _is_explicit = resolve_plugins_for_cli(args.esm, DEFAULT_ESM)
+    except FileNotFoundError as exc:
+        print(f"Error: {exc}")
+        return
+
+    if missing:
+        print("Warning: some default vanilla plugins are missing and will be skipped:")
+        for p in missing:
+            print(f"  - {p.name}")
 
     print(f"Loading plugins: {', '.join(str(p) for p in esm_paths)}")
     plugin_datas = load_plugin_bytes(esm_paths)

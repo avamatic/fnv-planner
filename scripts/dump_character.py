@@ -18,9 +18,9 @@ from fnv_planner.models.constants import ACTOR_VALUE_NAMES, ActorValue
 from fnv_planner.models.derived_stats import compute_stats
 from fnv_planner.models.game_settings import GameSettings
 from fnv_planner.parser.plugin_merge import (
-    default_vanilla_plugins,
     load_plugin_bytes,
     parse_records_merged,
+    resolve_plugins_for_cli,
 )
 
 
@@ -65,12 +65,16 @@ def main():
     # Load GMST + equipment if ESM available
     armors = {}
     weapons = {}
-    if args.esm:
-        esm_paths = args.esm
-        existing = [p for p in esm_paths if p.exists()]
-        missing = [p for p in esm_paths if not p.exists()]
-    else:
-        existing, missing = default_vanilla_plugins(DEFAULT_ESM)
+    fallback_announced = False
+    try:
+        existing, missing, _is_explicit = resolve_plugins_for_cli(args.esm, DEFAULT_ESM)
+    except FileNotFoundError as exc:
+        print(f"Error: {exc}")
+        print("No plugin found — using vanilla GMST defaults, no equipment")
+        gmst = GameSettings.defaults()
+        existing = []
+        missing = []
+        fallback_announced = True
 
     if existing:
         if missing:
@@ -116,11 +120,10 @@ def main():
                 courier.equipment[0] = shades.form_id
                 print(f"Equipped: {shades.name} (form_id: {shades.form_id:#x})")
     else:
-        if args.esm and missing:
-            for p in missing:
-                print(f"Error: plugin not found: {p}")
-        print("No plugin found — using vanilla GMST defaults, no equipment")
-        gmst = GameSettings.defaults()
+        if not fallback_announced:
+            print("No plugin found — using vanilla GMST defaults, no equipment")
+        if "gmst" not in locals():
+            gmst = GameSettings.defaults()
 
     # Compute stats
     stats = compute_stats(courier, gmst, armors=armors, weapons=weapons)

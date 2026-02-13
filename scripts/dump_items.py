@@ -20,10 +20,10 @@ from fnv_planner.parser.item_parser import (
     parse_all_weapons,
 )
 from fnv_planner.parser.plugin_merge import (
-    default_vanilla_plugins,
     is_missing_grup_error,
     load_plugin_bytes,
     parse_records_merged,
+    resolve_plugins_for_cli,
 )
 
 
@@ -302,22 +302,16 @@ def main():
                         help="Output format (default: text)")
     args = parser.parse_args()
 
-    if args.esm:
-        esm_paths = args.esm
-        missing = [p for p in esm_paths if not p.exists()]
-        if missing:
-            for p in missing:
-                print(f"Error: ESM not found at {p}")
-            raise SystemExit(1)
-    else:
-        esm_paths, missing = default_vanilla_plugins(DEFAULT_ESM)
-        if missing:
-            print("Warning: some default vanilla plugins are missing and will be skipped:")
-            for p in missing:
-                print(f"  - {p.name}")
-        if not esm_paths:
-            print("Error: no default plugins found. Pass --esm explicitly.")
-            raise SystemExit(1)
+    try:
+        esm_paths, missing, _is_explicit = resolve_plugins_for_cli(args.esm, DEFAULT_ESM)
+    except FileNotFoundError as exc:
+        print(f"Error: {exc}")
+        raise SystemExit(1)
+
+    if missing:
+        print("Warning: some default vanilla plugins are missing and will be skipped:")
+        for p in missing:
+            print(f"  - {p.name}")
 
     # If no category selected, show all
     show_all = not (args.armor or args.weapons or args.consumables or args.books)

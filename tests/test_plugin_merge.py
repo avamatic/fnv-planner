@@ -1,9 +1,12 @@
+import pytest
+
 from fnv_planner.models.game_settings import GameSettings
 from fnv_planner.parser.plugin_merge import (
     VANILLA_PLUGIN_ORDER,
     default_vanilla_plugins,
     parse_dict_merged,
     parse_records_merged,
+    resolve_plugins_for_cli,
 )
 
 
@@ -77,3 +80,27 @@ def test_default_vanilla_plugins_fallback_to_primary(tmp_path):
 
     assert existing == [custom]
     assert missing == []
+
+
+def test_resolve_plugins_for_cli_explicit_requires_all_exist(tmp_path):
+    a = tmp_path / "A.esm"
+    b = tmp_path / "B.esm"
+    a.write_bytes(b"x")
+
+    with pytest.raises(FileNotFoundError):
+        resolve_plugins_for_cli([a, b], a)
+
+
+def test_resolve_plugins_for_cli_default_mode(tmp_path):
+    data_dir = tmp_path / "Data"
+    data_dir.mkdir()
+    base = data_dir / "FalloutNV.esm"
+    hh = data_dir / "HonestHearts.esm"
+    base.write_bytes(b"x")
+    hh.write_bytes(b"x")
+
+    existing, missing, is_explicit = resolve_plugins_for_cli(None, base)
+
+    assert is_explicit is False
+    assert [p.name for p in existing] == ["FalloutNV.esm", "HonestHearts.esm"]
+    assert len(missing) == len(VANILLA_PLUGIN_ORDER) - 2

@@ -47,6 +47,36 @@ def default_vanilla_plugins(primary_esm_path: Path) -> tuple[list[Path], list[Pa
     return existing, missing
 
 
+def resolve_plugins_for_cli(
+    explicit_paths: list[Path] | None,
+    default_primary_esm_path: Path,
+) -> tuple[list[Path], list[Path], bool]:
+    """Resolve plugin paths for CLI scripts.
+
+    Returns:
+        (existing_paths, missing_default_paths, is_explicit)
+
+    Behavior:
+      - If explicit paths are provided, all must exist or FileNotFoundError is raised.
+      - If explicit paths are not provided, use default vanilla order and return
+        existing + missing defaults separately.
+    """
+    if explicit_paths:
+        missing = [p for p in explicit_paths if not p.exists()]
+        if missing:
+            raise FileNotFoundError(
+                "Missing explicit plugins: " + ", ".join(str(p) for p in missing)
+            )
+        return explicit_paths, [], True
+
+    existing, missing = default_vanilla_plugins(default_primary_esm_path)
+    if not existing:
+        raise FileNotFoundError(
+            "No default plugins found. Pass --esm explicitly."
+        )
+    return existing, missing, False
+
+
 def parse_records_merged(
     plugin_datas: Iterable[bytes],
     parser_fn: Callable[[bytes], list[T]],
