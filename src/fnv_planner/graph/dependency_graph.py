@@ -253,19 +253,28 @@ class DependencyGraph:
     as graph edges.
     """
 
-    __slots__ = ("_nodes", "_perk_deps", "_reverse_deps")
+    __slots__ = ("_nodes", "_perk_deps", "_reverse_deps", "_raw_condition_policy")
 
-    def __init__(self) -> None:
+    def __init__(self, raw_condition_policy: str = "strict") -> None:
+        if raw_condition_policy not in ("strict", "permissive"):
+            raise ValueError(
+                "raw_condition_policy must be 'strict' or 'permissive'"
+            )
         self._nodes: dict[int, PerkNode] = {}
         self._perk_deps: dict[int, list[int]] = defaultdict(list)
         self._reverse_deps: dict[int, list[int]] = defaultdict(list)
+        self._raw_condition_policy = raw_condition_policy
 
     # --- Construction --------------------------------------------------------
 
     @classmethod
-    def build(cls, perks: list[Perk]) -> DependencyGraph:
+    def build(
+        cls,
+        perks: list[Perk],
+        raw_condition_policy: str = "strict",
+    ) -> DependencyGraph:
         """Build the dependency graph from a list of parsed Perk records."""
-        graph = cls()
+        graph = cls(raw_condition_policy=raw_condition_policy)
 
         for perk in perks:
             req_set = _build_requirement_set(perk)
@@ -376,6 +385,11 @@ class DependencyGraph:
             current_ranks += perk_ids.count(perk_id)
         if current_ranks >= node.ranks:
             return False
+        if (
+            self._raw_condition_policy == "strict"
+            and node.requirements.raw_conditions
+        ):
+            return False
         return _evaluate_requirement_set(node.requirements, character, stats)
 
     def available_perks(
@@ -418,5 +432,9 @@ class DependencyGraph:
         for clause in node.requirements.clauses:
             if not _evaluate_clause(clause, character, stats):
                 unmet.append(_describe_clause(clause))
+        if self._raw_condition_policy == "strict" and node.requirements.raw_conditions:
+            unmet.append(
+                "Has unsupported raw conditions (strict mode blocks unknown CTDA)"
+            )
 
         return unmet

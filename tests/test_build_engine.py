@@ -162,6 +162,15 @@ class TestCreationTags:
         with pytest.raises(ValueError, match="Invalid skill"):
             e.set_tagged_skills({AV.GUNS, AV.LOCKPICK, AV.STRENGTH})
 
+    def test_big_guns_invalid_by_default(self):
+        e = _engine()
+        with pytest.raises(ValueError, match="Invalid skill"):
+            e.set_tagged_skills({AV.GUNS, AV.LOCKPICK, AV.BIG_GUNS})
+
+    def test_big_guns_valid_when_enabled(self):
+        e = _engine(config=BuildConfig(include_big_guns=True))
+        e.set_tagged_skills({AV.GUNS, AV.LOCKPICK, AV.BIG_GUNS})
+
 
 class TestCreationTraits:
     def test_valid_traits(self):
@@ -272,6 +281,15 @@ class TestSkillAllocation:
         e = self._ready_engine()
         with pytest.raises(ValueError, match="Cannot allocate"):
             e.allocate_skill_points(1, {AV.GUNS: 5})
+
+    def test_big_guns_allocation_when_enabled(self):
+        e = _engine(config=BuildConfig(include_big_guns=True))
+        _setup_creation(e)
+        e.set_tagged_skills({AV.GUNS, AV.LOCKPICK, AV.BIG_GUNS})
+        e.set_target_level(3)
+        e.allocate_skill_points(2, {AV.BIG_GUNS: 5})
+        char = e.materialize(2)
+        assert char.skill_points_spent[AV.BIG_GUNS] == 5
 
 
 # ===========================================================================

@@ -6,6 +6,8 @@ intervals, skill caps, or SPECIAL budgets.
 
 from dataclasses import dataclass
 
+from fnv_planner.models.constants import ActorValue
+
 
 @dataclass(slots=True)
 class BuildConfig:
@@ -18,3 +20,5 @@ class BuildConfig:
     special_budget: int = 40       # Total SPECIAL points at creation
     special_min: int = 1
     special_max: int = 10
+    include_big_guns: bool = False
+    big_guns_governing_attribute: int = ActorValue.STRENGTH

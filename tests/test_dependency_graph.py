@@ -24,6 +24,7 @@ from fnv_planner.models.perk import (
     LevelRequirement,
     Perk,
     PerkRequirement,
+    RawCondition,
     SexRequirement,
     SkillRequirement,
 )
@@ -399,6 +400,22 @@ class TestEligibility:
         char = Character(level=2, perks={2: [0x2000]})
         stats = _default_stats(strength=5)
         assert graph.can_take_perk(0x3000, char, stats)
+
+    def test_raw_conditions_block_in_strict_mode(self):
+        perk = _perk(form_id=0x4000, min_level=2)
+        perk.raw_conditions = [
+            RawCondition(function=449, operator="==", value=1.0, param1=0x1234, param2=0),
+        ]
+        graph = DependencyGraph.build([perk], raw_condition_policy="strict")
+        assert not graph.can_take_perk(0x4000, Character(level=2), _default_stats())
+
+    def test_raw_conditions_allowed_in_permissive_mode(self):
+        perk = _perk(form_id=0x4000, min_level=2)
+        perk.raw_conditions = [
+            RawCondition(function=449, operator="==", value=1.0, param1=0x1234, param2=0),
+        ]
+        graph = DependencyGraph.build([perk], raw_condition_policy="permissive")
+        assert graph.can_take_perk(0x4000, Character(level=2), _default_stats())
 
 
 # ===========================================================================

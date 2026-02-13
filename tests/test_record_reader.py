@@ -120,6 +120,30 @@ def test_skip_non_matching_grup():
     assert records[0].header.form_id == 2
 
 
+def test_repeated_label_defaults_to_first_matching_group():
+    rec_a = _build_record("TEST", 1, [("EDID", b"a\x00")])
+    rec_b = _build_record("TEST", 2, [("EDID", b"b\x00")])
+    data = _build_tes4_header() + _build_grup("TEST", [rec_a]) + _build_grup("TEST", [rec_b])
+    records = read_grup(data, "TEST")
+    assert [r.header.form_id for r in records] == [1]
+
+
+def test_repeated_label_can_aggregate_all_groups():
+    rec_a = _build_record("TEST", 1, [("EDID", b"a\x00")])
+    rec_b = _build_record("TEST", 2, [("EDID", b"b\x00")])
+    data = _build_tes4_header() + _build_grup("TEST", [rec_a]) + _build_grup("TEST", [rec_b])
+    records = read_grup(data, "TEST", all_groups=True)
+    assert [r.header.form_id for r in records] == [1, 2]
+
+
+def test_iter_grup_all_groups():
+    rec_a = _build_record("TEST", 10, [("EDID", b"a\x00")])
+    rec_b = _build_record("TEST", 11, [("EDID", b"b\x00")])
+    data = _build_tes4_header() + _build_grup("TEST", [rec_a]) + _build_grup("TEST", [rec_b])
+    ids = [r.header.form_id for r in iter_grup(data, "TEST", all_groups=True)]
+    assert ids == [10, 11]
+
+
 def test_grup_not_found():
     data = _build_tes4_header() + _build_grup("TEST", [])
     with pytest.raises(ValueError, match="not found"):

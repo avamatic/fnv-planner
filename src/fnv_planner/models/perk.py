@@ -13,6 +13,7 @@ class SkillRequirement:
     name: str            # friendly name (e.g. "Strength")
     operator: str        # comparison symbol (e.g. ">=")
     value: int           # threshold (float32 in the file, but always integral)
+    raw_value: float | None = None  # original CTDA float value
     is_or: bool = False  # True if this is an OR condition with the previous
 
 
@@ -21,6 +22,7 @@ class PerkRequirement:
     """Requires another perk (HasPerk condition)."""
     perk_form_id: int
     rank: int            # minimum rank required
+    raw_value: float | None = None  # original CTDA float value for rank check
     is_or: bool = False
 
 
@@ -43,6 +45,7 @@ class LevelRequirement:
     """Requires player level (GetLevel condition)."""
     operator: str
     value: int
+    raw_value: float | None = None  # original CTDA float value
     is_or: bool = False
 
 

@@ -119,6 +119,7 @@ def parse_perk(record: Record) -> Perk:
                         name=ACTOR_VALUE_NAMES.get(av, f"AV{av}"),
                         operator=ctda["operator_symbol"],
                         value=int(round(ctda["value"])),
+                        raw_value=ctda["value"],
                         is_or=ctda["is_or"],
                     )
                     skill_reqs.append(req)
@@ -137,6 +138,7 @@ def parse_perk(record: Record) -> Perk:
                 req = PerkRequirement(
                     perk_form_id=ctda["param1"],
                     rank=int(round(ctda["value"])),
+                    raw_value=ctda["value"],
                     is_or=ctda["is_or"],
                 )
                 perk_reqs.append(req)
@@ -154,6 +156,7 @@ def parse_perk(record: Record) -> Perk:
                 req = LevelRequirement(
                     operator=ctda["operator_symbol"],
                     value=int(round(ctda["value"])),
+                    raw_value=ctda["value"],
                     is_or=ctda["is_or"],
                 )
                 level_reqs.append(req)

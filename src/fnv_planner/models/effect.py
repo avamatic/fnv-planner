@@ -21,6 +21,19 @@ class StatEffect:
     magnitude: float       # amount (e.g. 1.0 or -2.0)
     duration: int = 0      # seconds (0 = instant/permanent)
     is_hostile: bool = False  # True = affects enemies (weapon), False = affects player
+    is_conditional: bool = False  # True = source effect had CTDA conditions
+
+
+@dataclass(slots=True)
+class EffectCondition:
+    """Raw CTDA condition attached to an ENCH/ALCH effect entry."""
+
+    function: int
+    operator: str
+    value: float
+    param1: int
+    param2: int
+    is_or: bool = False
 
 
 @dataclass(slots=True)
@@ -54,6 +67,7 @@ class EnchantmentEffect:
     duration: int
     effect_type: int     # 0=self, 1=touch, 2=target
     actor_value: int     # signed, from EFIT (-1 if not applicable)
+    conditions: list[EffectCondition] = field(default_factory=list)
 
 
 @dataclass(slots=True)

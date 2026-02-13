@@ -171,6 +171,9 @@ def compute_stats(
     gmst: GameSettings,
     armors: dict[int, Armor] | None = None,
     weapons: dict[int, Weapon] | None = None,
+    *,
+    include_big_guns: bool = False,
+    big_guns_governing_attribute: int = ActorValue.STRENGTH,
 ) -> CharacterStats:
     """Compute all derived stats for a character at their current level.
 
@@ -204,10 +207,16 @@ def compute_stats(
     # Compute skills: initial + tag bonus + invested points + equipment
     skills: dict[int, int] = {}
     tag_bonus = calc.tag_bonus()
+    governing_attribute = dict(SKILL_GOVERNING_ATTRIBUTE)
+    if include_big_guns:
+        governing_attribute.setdefault(
+            ActorValue.BIG_GUNS, big_guns_governing_attribute
+        )
+
     for skill_av in SKILL_INDICES:
-        if skill_av not in SKILL_GOVERNING_ATTRIBUTE:
-            continue  # Skip BIG_GUNS (33) — not used in FNV
-        gov_av = SKILL_GOVERNING_ATTRIBUTE[skill_av]
+        if skill_av not in governing_attribute:
+            continue
+        gov_av = governing_attribute[skill_av]
         gov_val = effective_special.get(gov_av, 5)
 
         base = calc.initial_skill(gov_val, luck)

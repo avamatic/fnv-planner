@@ -18,6 +18,7 @@ that represents the full character build space.
 #### 1b. Perk Parsing ✅
 - Parse PERK records: names, descriptions, requirements, playable flag, trait flag
 - Requirements include SPECIAL thresholds, skill levels, level gates, sex, OR groups
+- Typed requirements preserve original CTDA float values (`raw_value`) for future precision-sensitive logic
 - Files: `parser/perk_parser.py`, `models/perk.py`, `models/constants.py`
 
 #### 1c. Items & Effects ✅
@@ -25,12 +26,14 @@ that represents the full character build space.
 - Stat-bonus resolution chain: item → enchantment → magic effect → actor value
 - Weapon enchantments (type 2) produce hostile effects; apparel (type 3) produce buffs
 - Skill books use a skill index → actor value mapping (index + 32)
+- Effect CTDA conditions are captured on ENCH/ALCH effects; strict/permissive resolution policy controls inclusion
 - Files: `parser/effect_parser.py`, `parser/effect_resolver.py`, `models/effect.py`, `parser/item_parser.py`, `models/item.py`
 
 #### 1d. Game Settings & Derived Stats ✅
 - Parse GMST records for character formulas (skill points per level, initial skill values, max level, etc.)
 - Derived stat computation: carry weight, action points, skill points per level, poison/rad resist, companion nerve, unarmed damage, and more
 - All formulas driven by GMST values — no hard-coded vanilla constants
+- Optional mod support for Big Guns skill computation via config (`include_big_guns`)
 - Files: `parser/gmst_parser.py`, `models/game_settings.py`, `models/derived_stats.py`
 
 #### 1e. Character Data Model ✅
@@ -42,13 +45,16 @@ that represents the full character build space.
 - Perk → requirement edges (SPECIAL thresholds, skill levels, other perks, level)
 - CNF requirement evaluation: each perk's requirements are AND of OR-clauses
 - Trait enumeration, perk eligibility queries, available perk filtering
+- Strict/permissive policy for unsupported raw CTDA conditions in perk eligibility
 - Files: `graph/dependency_graph.py`
 
-#### Condition Parsing (CTDA) ⬚
-- CTDA subrecords gate when effects apply (e.g., "only vs Robots", "only vs Power Armor")
-- Also used in perk requirements for complex conditions
-- Currently skipped in `effect_parser.py` — effects with conditions are parsed
-  but the conditions themselves are discarded
+#### Condition Parsing (CTDA) ◐
+- Effect-side CTDAs are captured for ENCH/ALCH effect entries
+- Resolver supports:
+  - `strict` (default): exclude conditional effects with unknown context
+  - `permissive`: include conditional effects and mark them as conditional
+- Perk raw CTDA conditions are preserved and can be treated strictly/permissively in dependency evaluation
+- Full semantic evaluation of all CTDA functions is still pending
 
 ### Phase 2 — Build Engine ✅
 
@@ -61,17 +67,25 @@ Logic layer between raw data models and the future UI/optimizer. Validates and s
 - Eager validation on mutation; holistic `validate()` returns all `BuildError`s across the build
 - Stats caching with directional invalidation (clear from mutated level upward)
 - Configurable perk intervals, skill caps, and SPECIAL budgets via `BuildConfig`
+- Includes equipment setters, bulk equipment updates, unmet requirement querying, and optional Big Guns support via config
 - Files: `engine/build_engine.py`, `engine/build_config.py`
 
-### Phase 2b — Character Builder UI ⬚
-- Interactive character builder styled after the in-game interface
-- Calculate derived/secondary stats: DPS, DT, crit chance, crit bonus damage, carry weight, etc.
-- Real-time feedback as you assign SPECIAL points, pick traits, and select perks
+### Phase 2b — UX Prototyping ◐
+- GUI package was intentionally removed to reset UX direction
+- `BuildUiModel` provides UI-facing data contracts for Build / Progression / Library screens
+- Interactive CLI prototype available at `scripts/prototype_ui.py` for workflow testing
 
 ### Phase 3 — Optimizer ⬚
 - Algorithm that finds optimal builds for user-defined goals (max crit, max DPS, best melee, max skills, etc.)
 - Generate a level-by-level plan for growing the character from 1 to max
 - Export the plan to a document with room for manual notes (e.g., "grab power armor from dead troopers near Hidden Valley at level 1")
+
+#### Optimizer Planning Considerations
+- Max-skills scenarios with configurable skill-book collection commitments (planning around collecting 100% / 50% / 25% of books)
+- Optional inclusion of the `Skilled` exploit in optimization runs
+- Optional inclusion of `Intense Training` perk picks as optimization decisions
+- Implant planning (maximum implants determined by Endurance)
+- Optional support for modded `Big Guns` skill in optimization and requirement evaluation
 
 ### Phase 4 — Beyond Fallout.esm ⬚
 
@@ -121,7 +135,7 @@ Books use a skill_index field (skill = index + 32) instead of enchantments.
 - **Game data parsing**: Custom ESP/ESM parser (Bethesda plugin format)
 - **Dependency graph**: Custom CNF requirement evaluation
 - **Optimization** (planned): scipy/numpy
-- **UI** (planned): Web frontend (HTML/CSS/JS) with Python backend (FastAPI), styled like a Pip-Boy
+- **Current UX layer**: Engine-side `BuildUiModel` + interactive CLI prototype
 
 ## Project Structure
 ```
@@ -131,7 +145,8 @@ fnv-planner/
 ├── src/fnv_planner/
 │   ├── engine/
 │   │   ├── build_config.py       # BuildConfig: tuneable parameters
-│   │   └── build_engine.py       # LevelPlan, BuildState, BuildError, BuildEngine
+│   │   ├── build_engine.py       # LevelPlan, BuildState, BuildError, BuildEngine
+│   │   └── ui_model.py           # UI-facing adapter: selected entities, progression, diagnostics
 │   ├── graph/
 │   │   └── dependency_graph.py   # DependencyGraph: perk eligibility & trait queries
 │   ├── models/
@@ -155,8 +170,9 @@ fnv-planner/
 │   ├── dump_character.py         # CLI: build and inspect a character snapshot
 │   ├── dump_graph.py             # CLI: list perks with their requirements
 │   ├── dump_items.py             # CLI: list parsed items with stat effects
-│   └── dump_perks.py             # CLI: list parsed perks
-└── tests/                        # 255 tests (pytest)
+│   ├── dump_perks.py             # CLI: list parsed perks
+│   └── prototype_ui.py           # Interactive CLI prototype (Build/Progression/Library)
+└── tests/                        # 277 tests (pytest)
 ```
 
 ## Running
@@ -174,4 +190,7 @@ python -m scripts.dump_items --armor --playable-only
 python -m scripts.dump_items --weapons --consumables --books
 python -m scripts.dump_graph
 python -m scripts.dump_character
+
+# Interactive CLI prototype for Build / Progression / Library flows
+python -m scripts.prototype_ui [--esm /path/to/FalloutNV.esm]
 ```

@@ -11,9 +11,37 @@ Key edge cases handled here:
 
 import struct
 
-from fnv_planner.models.effect import EnchantmentEffect
+from fnv_planner.models.effect import EffectCondition, EnchantmentEffect
 from fnv_planner.models.item import Armor, Book, Consumable, Weapon
 from fnv_planner.models.records import Record
+
+
+_COMPARISON_SYMBOLS: dict[int, str] = {
+    0: "==",
+    1: "!=",
+    2: ">",
+    3: ">=",
+    4: "<",
+    5: "<=",
+}
+
+
+def _decode_ctda(data: bytes) -> EffectCondition:
+    type_byte = data[0]
+    comp_value = struct.unpack_from("<f", data, 4)[0]
+    func_idx = struct.unpack_from("<H", data, 8)[0]
+    param1 = struct.unpack_from("<I", data, 12)[0]
+    param2 = struct.unpack_from("<I", data, 16)[0]
+    comp_op = (type_byte >> 5) & 0x07
+    is_or = bool(type_byte & 0x01)
+    return EffectCondition(
+        function=func_idx,
+        operator=_COMPARISON_SYMBOLS.get(comp_op, f"?{comp_op}"),
+        value=comp_value,
+        param1=param1,
+        param2=param2,
+        is_or=is_or,
+    )
 
 
 def parse_armor(record: Record) -> Armor:
@@ -141,6 +169,7 @@ def parse_consumable(record: Record) -> Consumable:
     effects: list[EnchantmentEffect] = []
 
     pending_mgef_id: int | None = None
+    pending_conditions: list[EffectCondition] = []
 
     for sub in record.subrecords:
         if sub.type == "EDID":
@@ -167,11 +196,13 @@ def parse_consumable(record: Record) -> Consumable:
                 duration=dur,
                 effect_type=etype,
                 actor_value=av,
+                conditions=list(pending_conditions),
             ))
             pending_mgef_id = None
+            pending_conditions.clear()
         elif sub.type == "CTDA":
-            # Skip condition subrecords
-            pass
+            if len(sub.data) >= 28:
+                pending_conditions.append(_decode_ctda(sub.data))
 
     return Consumable(
         form_id=record.header.form_id,

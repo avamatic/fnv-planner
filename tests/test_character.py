@@ -245,6 +245,21 @@ def test_compute_stats_returns_character_stats():
     assert len(stats.skills) == 13  # 13 FNV skills (BIG_GUNS excluded)
 
 
+def test_compute_stats_can_include_big_guns_when_enabled():
+    c = Character()
+    c.tagged_skills = {AV.BARTER, AV.BIG_GUNS, AV.GUNS}
+    gmst = GameSettings.defaults()
+    stats = compute_stats(
+        c,
+        gmst,
+        include_big_guns=True,
+        big_guns_governing_attribute=AV.STRENGTH,
+    )
+    assert AV.BIG_GUNS in stats.skills
+    # Base 15 with all SPECIAL=5 + tag bonus 15
+    assert stats.skills[AV.BIG_GUNS] == 30
+
+
 def test_compute_stats_level_20():
     """Stats at level 20 with some build choices."""
     c = Character(

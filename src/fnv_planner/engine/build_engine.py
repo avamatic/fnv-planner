@@ -17,7 +17,11 @@ from dataclasses import dataclass, field
 from fnv_planner.engine.build_config import BuildConfig
 from fnv_planner.graph.dependency_graph import DependencyGraph
 from fnv_planner.models.character import Character
-from fnv_planner.models.constants import SKILL_GOVERNING_ATTRIBUTE, SPECIAL_INDICES
+from fnv_planner.models.constants import (
+    SKILL_GOVERNING_ATTRIBUTE,
+    SPECIAL_INDICES,
+    ActorValue,
+)
 from fnv_planner.models.derived_stats import (
     CharacterStats,
     DerivedStats,
@@ -26,8 +30,8 @@ from fnv_planner.models.derived_stats import (
 from fnv_planner.models.game_settings import GameSettings
 from fnv_planner.models.item import Armor, Weapon
 
-# Valid skill AV indices (keys of the governing-attribute map).
-_VALID_SKILLS = frozenset(SKILL_GOVERNING_ATTRIBUTE.keys())
+# Base valid skill AV indices (without optional Big Guns support).
+_BASE_VALID_SKILLS = frozenset(SKILL_GOVERNING_ATTRIBUTE.keys())
 
 
 # ---------------------------------------------------------------------------
@@ -151,6 +155,26 @@ class BuildEngine:
         for lv in to_remove:
             del self._stats_cache[lv]
 
+    def _valid_skills(self) -> frozenset[int]:
+        if self._config.include_big_guns:
+            return _BASE_VALID_SKILLS | {int(ActorValue.BIG_GUNS)}
+        return _BASE_VALID_SKILLS
+
+    def _compute_stats(
+        self,
+        char: Character,
+        armors: dict[int, Armor] | None = None,
+        weapons: dict[int, Weapon] | None = None,
+    ) -> CharacterStats:
+        return compute_stats(
+            char,
+            self._gmst,
+            armors,
+            weapons,
+            include_big_guns=self._config.include_big_guns,
+            big_guns_governing_attribute=self._config.big_guns_governing_attribute,
+        )
+
     # --- Creation phase ----------------------------------------------------
 
     def set_name(self, name: str) -> None:
@@ -212,14 +236,14 @@ class BuildEngine:
                 f"Must tag exactly {cfg.num_tagged_skills} skills, got {len(skills)}"
             )
         for av in skills:
-            if av not in _VALID_SKILLS:
+            if av not in self._valid_skills():
                 raise ValueError(f"Invalid skill AV index: {av}")
         self._state.tagged_skills = set(skills)
         self._invalidate_from(1)
 
     def toggle_tagged_skill(self, av: int) -> bool:
         """Toggle one tagged skill. Returns True if the toggle was applied."""
-        if av not in _VALID_SKILLS:
+        if av not in self._valid_skills():
             return False
         tags = self._state.tagged_skills
         if av in tags:
@@ -326,7 +350,7 @@ class BuildEngine:
 
         # Validate skill indices.
         for av in points:
-            if av not in _VALID_SKILLS:
+            if av not in self._valid_skills():
                 raise ValueError(f"Invalid skill AV index: {av}")
 
         # Validate individual point values are positive.
@@ -375,7 +399,7 @@ class BuildEngine:
         # Build a character snapshot excluding this level's current perk,
         # so can_take_perk doesn't see a stale selection as "already taken".
         char = self._materialize_for_perk_check(level)
-        stats = compute_stats(char, self._gmst)
+        stats = self._compute_stats(char)
         if not self._graph.can_take_perk(perk_id, char, stats):
             raise ValueError(
                 f"Perk {perk_id:#x} is not available at level {level}"
@@ -446,7 +470,7 @@ class BuildEngine:
             return self._stats_cache[level]
 
         char = self.materialize(level, armors, weapons)
-        stats = compute_stats(char, self._gmst, armors, weapons)
+        stats = self._compute_stats(char, armors, weapons)
 
         if armors is None and weapons is None:
             self._stats_cache[level] = stats
@@ -456,8 +480,20 @@ class BuildEngine:
     def available_perks_at(self, level: int) -> list[int]:
         """Return perk IDs available at *level* given the current build."""
         char = self.materialize(level)
-        stats = compute_stats(char, self._gmst)
+        stats = self._compute_stats(char)
         return self._graph.available_perks(char, stats)
+
+    def unmet_requirements_for_perk(
+        self,
+        perk_id: int,
+        level: int | None = None,
+    ) -> list[str]:
+        """Return unmet requirement descriptions for a perk at a given level."""
+        if level is None:
+            level = self._state.target_level
+        char = self.materialize(level)
+        stats = self._compute_stats(char)
+        return self._graph.unmet_requirements(perk_id, char, stats)
 
     def unspent_skill_points_at(self, level: int) -> int:
         """Return unspent skill points at a given level."""
@@ -543,7 +579,7 @@ class BuildEngine:
                 f"have {len(self._state.tagged_skills)}",
             ))
         for av in self._state.tagged_skills:
-            if av not in _VALID_SKILLS:
+            if av not in self._valid_skills():
                 errors.append(BuildError(
                     0, "tags", f"Invalid tagged skill AV index: {av}"
                 ))
@@ -587,7 +623,7 @@ class BuildEngine:
 
         # Validate skill AV indices
         for av in plan.skill_points:
-            if av not in _VALID_SKILLS:
+            if av not in self._valid_skills():
                 errors.append(BuildError(
                     level, "skill_points",
                     f"Invalid skill AV index: {av}",
@@ -607,7 +643,7 @@ class BuildEngine:
         # the max-rank false positive (the perk is already in the snapshot).
         if self.is_perk_level(level) and plan.perk is not None:
             char = self._materialize_for_perk_check(level)
-            stats = compute_stats(char, self._gmst)
+            stats = self._compute_stats(char)
             if not self._graph.can_take_perk(plan.perk, char, stats):
                 errors.append(BuildError(
                     level, "perk",
@@ -674,7 +710,12 @@ class BuildEngine:
 
     def _base_skill(self, av: int, points_spent: int) -> int:
         """Compute base skill value (no equipment) for a skill AV index."""
-        gov_av = SKILL_GOVERNING_ATTRIBUTE[av]
+        if av in SKILL_GOVERNING_ATTRIBUTE:
+            gov_av = SKILL_GOVERNING_ATTRIBUTE[av]
+        elif av == int(ActorValue.BIG_GUNS) and self._config.include_big_guns:
+            gov_av = self._config.big_guns_governing_attribute
+        else:
+            raise ValueError(f"Invalid skill AV index: {av}")
         special = self._state.special or {}
         gov_val = special.get(gov_av, 5)
         luck = special.get(11, 5)  # ActorValue.LUCK = 11

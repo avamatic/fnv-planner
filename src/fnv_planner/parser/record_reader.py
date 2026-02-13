@@ -76,7 +76,12 @@ def _read_record(reader: BinaryReader) -> Record:
     return Record(header=header, subrecords=subrecords)
 
 
-def read_grup(data: bytes, label: str) -> list[Record]:
+def read_grup(
+    data: bytes,
+    label: str,
+    *,
+    all_groups: bool = False,
+) -> list[Record]:
     """Find a top-level GRUP by label and return all its records.
 
     Args:
@@ -84,20 +89,27 @@ def read_grup(data: bytes, label: str) -> list[Record]:
         label: 4-char GRUP label to find (e.g. "PERK").
 
     Returns:
-        List of Record objects from the matching GRUP.
+        List of Record objects from the matching GRUP. If *all_groups* is True,
+        aggregates records from every matching top-level GRUP label.
 
     Raises:
         ValueError: If the GRUP is not found.
     """
-    return list(iter_grup(data, label))
+    return list(iter_grup(data, label, all_groups=all_groups))
 
 
-def iter_grup(data: bytes, label: str) -> "Generator[Record]":
+def iter_grup(
+    data: bytes,
+    label: str,
+    *,
+    all_groups: bool = False,
+) -> "Generator[Record]":
     """Find a top-level GRUP by label and yield its records.
 
-    Skips the TES4 header, then scans top-level GRUPs. Once the target
-    is found, yields each record inside it. Skips non-matching GRUPs
-    by seeking past them.
+    Skips the TES4 header, then scans top-level GRUPs. By default, stops
+    after the first matching GRUP label (backward-compatible behavior).
+    If *all_groups* is True, yields records from every matching top-level
+    GRUP label encountered.
     """
     reader = BinaryReader(data)
 
@@ -110,6 +122,8 @@ def iter_grup(data: bytes, label: str) -> "Generator[Record]":
     # plus the record data
     reader.skip(16 + tes4_data_size)
 
+    found = False
+
     # Scan top-level GRUPs
     while reader.remaining > 0:
         sig = reader.signature()
@@ -121,14 +135,18 @@ def iter_grup(data: bytes, label: str) -> "Generator[Record]":
         reader.skip(4)
 
         if group.label == label:
+            found = True
             # Yield records from this GRUP
             # Data area = group.size - 24 bytes (header size)
             grup_data = reader.slice(group.size - _GROUP_HEADER_SIZE)
             while grup_data.remaining > 0:
                 yield _read_record(grup_data)
-            return
+            if not all_groups:
+                return
+            continue
 
         # Skip this GRUP entirely (size includes the 24-byte header we already read)
         reader.skip(group.size - _GROUP_HEADER_SIZE)
 
-    raise ValueError(f"GRUP {label!r} not found in plugin")
+    if not found:
+        raise ValueError(f"GRUP {label!r} not found in plugin")

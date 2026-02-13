@@ -25,6 +25,7 @@ class Armor:
     enchantment_form_id: int | None   # EITM form ID, if enchanted
     is_playable: bool           # BMDT byte 4 bit 6 inverted
     stat_effects: list[StatEffect] = field(default_factory=list)
+    conditional_effects_excluded: int = 0
 
 
 @dataclass(slots=True)
@@ -44,6 +45,7 @@ class Weapon:
     enchantment_form_id: int | None
     is_playable: bool           # header flag bit 2 inverted (non-playable flag)
     stat_effects: list[StatEffect] = field(default_factory=list)
+    conditional_effects_excluded: int = 0
 
 
 @dataclass(slots=True)
@@ -59,6 +61,7 @@ class Consumable:
     addiction_chance: float     # from ENIT
     effects: list[EnchantmentEffect] = field(default_factory=list)  # inline EFID/EFIT
     stat_effects: list[StatEffect] = field(default_factory=list)
+    conditional_effects_excluded: int = 0
 
     @property
     def is_food(self) -> bool:
