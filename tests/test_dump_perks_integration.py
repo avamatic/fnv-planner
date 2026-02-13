@@ -2,7 +2,7 @@ from pathlib import Path
 
 import pytest
 
-import scripts.dump_perks as dump_perks
+from fnv_planner.parser.perk_classification import detect_challenge_perk_ids
 from fnv_planner.parser.perk_parser import parse_all_perks
 from fnv_planner.parser.plugin_merge import (
     VANILLA_PLUGIN_ORDER,
@@ -38,20 +38,20 @@ def merged_perks():
 
 def test_detected_challenge_perk_count_matches_vanilla_stack(merged_perks):
     perks, plugin_datas = merged_perks
-    challenge_ids = dump_perks._detect_challenge_perk_ids(plugin_datas, perks)
+    challenge_ids = detect_challenge_perk_ids(plugin_datas, perks)
     assert len(challenge_ids) == 16
 
 
 def test_set_lasers_for_fun_detected_as_challenge(merged_perks):
     perks, plugin_datas = merged_perks
-    challenge_ids = dump_perks._detect_challenge_perk_ids(plugin_datas, perks)
+    challenge_ids = detect_challenge_perk_ids(plugin_datas, perks)
     by_edid = {p.editor_id: p for p in perks}
     assert by_edid["SetLasersForFunPerk"].form_id in challenge_ids
 
 
 def test_playable_only_filter_excludes_set_lasers_by_default(merged_perks):
     perks, plugin_datas = merged_perks
-    challenge_ids = dump_perks._detect_challenge_perk_ids(plugin_datas, perks)
+    challenge_ids = detect_challenge_perk_ids(plugin_datas, perks)
     filtered = [
         p for p in perks
         if p.is_playable and not p.is_trait and p.form_id not in challenge_ids
