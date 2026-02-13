@@ -91,6 +91,9 @@ class MainWindow(Adw.ApplicationWindow):
             self._build_controller.skill_book_usage_by_level(),
             self._build_controller.skill_book_points_by_level(),
         )
+        self._progression_controller.set_implant_usage_by_level(
+            self._build_controller.implant_points_by_level()
+        )
         self._progression_controller.set_flat_skill_bonus_by_level(
             self._build_controller.flat_skill_bonuses_by_level()
         )
@@ -153,6 +156,9 @@ class MainWindow(Adw.ApplicationWindow):
             self._build_controller.skill_book_rows(),
             self._build_controller.skill_book_usage_by_level(),
             self._build_controller.skill_book_points_by_level(),
+        )
+        self._progression_controller.set_implant_usage_by_level(
+            self._build_controller.implant_points_by_level()
         )
         self._progression_controller.set_flat_skill_bonus_by_level(
             self._build_controller.flat_skill_bonuses_by_level()

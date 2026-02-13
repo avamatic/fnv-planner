@@ -136,6 +136,40 @@ class BuildController:
             for level, per_level in self._last_skill_book_points_by_level.items()
         }
 
+    def implant_points_by_level(self) -> dict[int, dict[int, int]]:
+        """Estimated SPECIAL points granted by implants before each level-up."""
+        special_implants = self._special_implants_by_target_av()
+        if not special_implants:
+            return {}
+
+        out: dict[int, dict[int, int]] = {}
+        used_targets: set[int] = set()
+
+        # Creation-phase implant points are applied before level 2.
+        for av, pts in self.engine.state.creation_special_points.items():
+            iav = int(av)
+            if iav not in special_implants or iav in used_targets:
+                continue
+            if int(pts) <= 0:
+                continue
+            out.setdefault(2, {})
+            out[2][iav] = out[2].get(iav, 0) + 1
+            used_targets.add(iav)
+
+        for level in sorted(self.engine.state.level_plans):
+            plan = self.engine.state.level_plans[level]
+            for av, pts in plan.special_points.items():
+                iav = int(av)
+                if iav not in special_implants or iav in used_targets:
+                    continue
+                if int(pts) <= 0:
+                    continue
+                out.setdefault(int(level), {})
+                out[int(level)][iav] = out[int(level)].get(iav, 0) + 1
+                used_targets.add(iav)
+
+        return out
+
     def perk_reason_for_level(self, level: int) -> str | None:
         reason = self._last_perk_selection_reasons.get(int(level))
         if reason:
@@ -926,3 +960,31 @@ class BuildController:
             if len(ordered) >= 3:
                 break
         return ordered
+
+    def _special_implants_by_target_av(self) -> dict[int, int]:
+        out: dict[int, int] = {}
+        for perk in self.perks.values():
+            target = self._implant_special_target(perk)
+            if target is None:
+                continue
+            out[int(target)] = int(perk.form_id)
+        return out
+
+    @staticmethod
+    def _implant_special_target(perk: Perk) -> int | None:
+        text = f"{perk.name} {perk.editor_id} {perk.description}".lower()
+        if "implant" not in text:
+            return None
+        mapping = (
+            ("strength", 5),
+            ("perception", 6),
+            ("endurance", 7),
+            ("charisma", 8),
+            ("intelligence", 9),
+            ("agility", 10),
+            ("luck", 11),
+        )
+        for token, av in mapping:
+            if token in text:
+                return int(av)
+        return None

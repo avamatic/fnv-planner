@@ -11,8 +11,13 @@ from fnv_planner.ui.state import UiState
 AV = ActorValue
 
 
-def _controller(skill_books_by_av: dict[int, int]) -> BuildController:
-    engine = BuildEngine(GameSettings.defaults(), DependencyGraph.build([]))
+def _controller(
+    skill_books_by_av: dict[int, int],
+    *,
+    perks: dict[int, Perk] | None = None,
+) -> BuildController:
+    perk_rows = list((perks or {}).values())
+    engine = BuildEngine(GameSettings.defaults(), DependencyGraph.build(perk_rows))
     engine.set_special(
         {
             AV.STRENGTH: 5,
@@ -30,7 +35,7 @@ def _controller(skill_books_by_av: dict[int, int]) -> BuildController:
     return BuildController(
         engine=engine,
         ui_model=BuildUiModel(engine),
-        perks={},
+        perks=perks or {},
         challenge_perk_ids=set(),
         skill_books_by_av=skill_books_by_av,
         linked_spell_names_by_form={},
@@ -136,3 +141,22 @@ def test_apply_quick_perk_preset_reports_unresolved_entries(tmp_path):
     assert message is not None
     assert "NoSuchPerk" in message
     assert c.selected_perk_ids() == {perk.form_id}
+
+
+def test_implant_points_by_level_reports_creation_implant_allocation():
+    implant = Perk(
+        form_id=0x9101,
+        editor_id="PerceptionImplant",
+        name="Perception Implant",
+        description="An implant that increases your Perception by 1.",
+        is_trait=False,
+        min_level=1,
+        ranks=1,
+        is_playable=False,
+        is_hidden=False,
+    )
+    c = _controller({}, perks={implant.form_id: implant})
+    ok, message = c.add_actor_value_request(int(AV.PERCEPTION), 8, reason="gate")
+    assert ok is True
+    assert message is None
+    assert c.implant_points_by_level() == {2: {int(AV.PERCEPTION): 1}}

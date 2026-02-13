@@ -83,21 +83,12 @@ class ProgressionPage(Gtk.Box):
         prev_skills: dict[int, int] | None = None
         for snap in rows:
             if snap.level > 1:
+                implants = self._controller.implants_between_levels_label(snap.level - 1, snap.level)
+                if implants:
+                    self._append_event_row(implants)
                 between = self._controller.skill_books_between_levels_label(snap.level - 1, snap.level)
                 if between:
-                    event_row = Gtk.ListBoxRow()
-                    event_row.set_selectable(False)
-                    event_row.set_activatable(False)
-                    event_card = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=2)
-                    event_card.set_margin_top(4)
-                    event_card.set_margin_bottom(4)
-                    event_card.set_margin_start(8)
-                    event_card.set_margin_end(8)
-                    event_line = Gtk.Label(label=between, xalign=0)
-                    event_line.set_wrap(True)
-                    event_card.append(event_line)
-                    event_row.set_child(event_card)
-                    self._progression_list.append(event_row)
+                    self._append_event_row(between)
 
             perk_label = self._controller.perk_label_for_level(snap.level, snap.perk_id)
             allocation_label = self._controller.skill_allocation_label_for_level(snap.level)
@@ -173,6 +164,21 @@ class ProgressionPage(Gtk.Box):
             if active_level is not None and snap.level == active_level:
                 self._progression_list.select_row(row)
             prev_skills = dict(effective_skills)
+
+    def _append_event_row(self, text: str) -> None:
+        event_row = Gtk.ListBoxRow()
+        event_row.set_selectable(False)
+        event_row.set_activatable(False)
+        event_card = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=2)
+        event_card.set_margin_top(4)
+        event_card.set_margin_bottom(4)
+        event_card.set_margin_start(8)
+        event_card.set_margin_end(8)
+        event_line = Gtk.Label(label=text, xalign=0)
+        event_line.set_wrap(True)
+        event_card.append(event_line)
+        event_row.set_child(event_card)
+        self._progression_list.append(event_row)
 
     def _render_anytime_perks(self) -> None:
         self._clear_list(self._anytime_list)

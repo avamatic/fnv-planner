@@ -91,3 +91,19 @@ def test_progression_controller_renders_between_level_book_step_label():
     assert label is not None
     assert "Between L1 and L2" in label
     assert "Science +1 book(s) (+2 skill)" in label
+
+
+def test_progression_controller_renders_between_level_implant_step_label():
+    engine = _engine()
+    controller = ProgressionController(
+        engine=engine,
+        ui_model=BuildUiModel(engine),
+        perks={},
+        state=UiState(),
+    )
+    controller.set_implant_usage_by_level({2: {int(AV.PERCEPTION): 1}})
+
+    label = controller.implants_between_levels_label(1, 2)
+    assert label is not None
+    assert "Between L1 and L2" in label
+    assert "Perception +1 implant point(s)" in label
