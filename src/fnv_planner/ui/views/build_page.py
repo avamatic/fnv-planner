@@ -90,6 +90,13 @@ class BuildPage(Gtk.Box):
         trait_row.append(Gtk.Label(label=f"Max traits: {self._controller.max_traits}", xalign=0))
         primary_col.append(trait_row)
 
+        tagged_row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
+        add_tagged = Gtk.Button(label="Open Tagged Skill Picker")
+        add_tagged.connect("clicked", self._on_add_tagged_skill_request)
+        tagged_row.append(add_tagged)
+        tagged_row.append(Gtk.Label(label="Max tagged skills: 3", xalign=0))
+        primary_col.append(tagged_row)
+
         meta_header = Gtk.Label(label="Meta Requests or Bundle Requests", xalign=0)
         meta_header.add_css_class("heading")
         meta_col.append(meta_header)
@@ -145,6 +152,18 @@ class BuildPage(Gtk.Box):
         traits_frame.set_child(traits_box)
         self._traits_list = Gtk.ListBox()
         traits_box.append(self._traits_list)
+
+        tagged_frame = Gtk.Frame(label="Tagged Skills")
+        tagged_frame.set_hexpand(True)
+        stats_row.append(tagged_frame)
+        tagged_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
+        tagged_box.set_margin_top(10)
+        tagged_box.set_margin_bottom(10)
+        tagged_box.set_margin_start(10)
+        tagged_box.set_margin_end(10)
+        tagged_frame.set_child(tagged_box)
+        self._tagged_list = Gtk.ListBox()
+        tagged_box.append(self._tagged_list)
 
         perks_frame = Gtk.Frame(label="Perks")
         perks_frame.set_hexpand(True)
@@ -278,6 +297,7 @@ class BuildPage(Gtk.Box):
             self._budget_label.set_text(
                 f"SPECIAL used {used}/{self._controller.special_budget}  remaining {remaining}"
             )
+            self._render_tagged_skills()
             self._render_traits()
             self._render_perks()
             self._render_skill_books()
@@ -352,6 +372,25 @@ class BuildPage(Gtk.Box):
             row = Gtk.ListBoxRow()
             row.set_child(Gtk.Label(label=f"{name}  [{source}]", xalign=0))
             self._traits_list.append(row)
+
+    def _render_tagged_skills(self) -> None:
+        child = self._tagged_list.get_first_child()
+        while child is not None:
+            next_child = child.get_next_sibling()
+            self._tagged_list.remove(child)
+            child = next_child
+
+        rows = self._controller.selected_tagged_skills_rows()
+        if not rows:
+            row = Gtk.ListBoxRow()
+            row.set_child(Gtk.Label(label="No tagged skills selected.", xalign=0))
+            self._tagged_list.append(row)
+            return
+
+        for name, source in rows:
+            row = Gtk.ListBoxRow()
+            row.set_child(Gtk.Label(label=f"{name}  [{source}]", xalign=0))
+            self._tagged_list.append(row)
 
     def _render_perks(self) -> None:
         child = self._perks_list.get_first_child()
@@ -434,6 +473,15 @@ class BuildPage(Gtk.Box):
             items=items,
             selected=self._controller.selected_trait_ids(),
             on_apply=self._apply_trait_picker_selection,
+        )
+
+    def _on_add_tagged_skill_request(self, _button: Gtk.Button) -> None:
+        items = [(av, name) for av, name in self._controller.tagged_skill_options()]
+        self._open_multi_select_dialog(
+            title="Select Tagged Skills",
+            items=items,
+            selected=self._controller.selected_tagged_skill_ids(),
+            on_apply=self._apply_tagged_skill_picker_selection,
         )
 
     def _on_add_max_skills_request(self, _button: Gtk.Button) -> None:
@@ -521,6 +569,13 @@ class BuildPage(Gtk.Box):
     def _apply_trait_picker_selection(self, selected: set[int]) -> None:
         ok, message = self._controller.set_trait_requests(selected)
         self._status_label.set_text("" if ok else (message or "Trait request limit applied"))
+        self.refresh()
+
+    def _apply_tagged_skill_picker_selection(self, selected: set[int]) -> None:
+        ok, message = self._controller.set_tagged_skill_requests(selected)
+        self._status_label.set_text(
+            "" if ok else (message or "Tagged skill request limit applied")
+        )
         self.refresh()
 
     def _open_multi_select_dialog(

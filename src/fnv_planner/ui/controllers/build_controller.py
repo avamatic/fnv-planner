@@ -6,7 +6,12 @@ from typing import Callable
 
 from fnv_planner.engine.build_engine import BuildEngine
 from fnv_planner.engine.ui_model import BuildUiModel, UiDiagnostic
-from fnv_planner.models.constants import ACTOR_VALUE_NAMES, SKILL_INDICES, SPECIAL_INDICES
+from fnv_planner.models.constants import (
+    ACTOR_VALUE_NAMES,
+    SKILL_GOVERNING_ATTRIBUTE,
+    SKILL_INDICES,
+    SPECIAL_INDICES,
+)
 from fnv_planner.models.derived_stats import CharacterStats
 from fnv_planner.models.perk import Perk
 from fnv_planner.optimizer.planner import plan_build
@@ -18,13 +23,14 @@ from fnv_planner.ui.state import UiState
 
 @dataclass(slots=True)
 class PriorityRequest:
-    kind: str  # "actor_value" | "perk" | "trait" | "max_skills"
+    kind: str  # "actor_value" | "perk" | "trait" | "tagged_skill" | "max_skills"
     actor_value: int | None = None
     operator: str = ">="
     value: int | None = None
     perk_id: int | None = None
     perk_rank: int = 1
     trait_id: int | None = None
+    tagged_skill_av: int | None = None
     reason: str = ""
 
 
@@ -247,6 +253,20 @@ class BuildController:
         assert self.requests is not None
         return {int(r.trait_id) for r in self.requests if r.kind == "trait" and r.trait_id is not None}
 
+    def tagged_skill_options(self) -> list[tuple[int, str]]:
+        rows: list[tuple[int, str]] = []
+        for av in sorted(int(s) for s in SKILL_GOVERNING_ATTRIBUTE):
+            rows.append((int(av), ACTOR_VALUE_NAMES.get(int(av), f"AV{av}")))
+        return rows
+
+    def selected_tagged_skill_ids(self) -> set[int]:
+        assert self.requests is not None
+        return {
+            int(r.tagged_skill_av)
+            for r in self.requests
+            if r.kind == "tagged_skill" and r.tagged_skill_av is not None
+        }
+
     def perk_rows(self, query: str = "") -> list[tuple[int, str, str, bool]]:
         q = query.strip().lower()
         rows: list[tuple[int, str, str, bool]] = []
@@ -453,6 +473,29 @@ class BuildController:
             )
         return True, None
 
+    def set_tagged_skill_requests(self, skill_avs: set[int]) -> tuple[bool, str | None]:
+        assert self.requests is not None
+        ordered = [av for av, _name in self.tagged_skill_options() if av in skill_avs]
+        trimmed = ordered[:3]
+        self.requests = [r for r in self.requests if r.kind != "tagged_skill"]
+        for av in trimmed:
+            self.requests.append(
+                PriorityRequest(
+                    kind="tagged_skill",
+                    tagged_skill_av=int(av),
+                    reason="Tagged skill request",
+                )
+            )
+        self._recompute_plan()
+        self._sync_state()
+        self._notify_changed()
+        if len(ordered) > len(trimmed):
+            return (
+                False,
+                "Tagged skill requests limited to 3; kept first 3.",
+            )
+        return True, None
+
     def add_max_skills_request(self) -> None:
         assert self.requests is not None
         existing = any(r.kind == "max_skills" for r in self.requests)
@@ -481,6 +524,10 @@ class BuildController:
             elif req.kind == "trait":
                 trait_name = self.perks.get(int(req.trait_id or 0)).name if req.trait_id in self.perks else f"{req.trait_id:#x}"
                 text = f"Trait: {trait_name} [{req.reason}]"
+            elif req.kind == "tagged_skill":
+                av = int(req.tagged_skill_av or 0)
+                skill_name = ACTOR_VALUE_NAMES.get(av, f"AV{av}")
+                text = f"Tagged Skill: {skill_name} [{req.reason}]"
             elif req.kind == "max_skills":
                 text = f"Max Skills: all skills to 100 [{req.reason}]"
             else:
@@ -535,6 +582,22 @@ class BuildController:
         rows.sort(key=lambda x: x[0].lower())
         return rows
 
+    def selected_tagged_skills_rows(self) -> list[tuple[str, str]]:
+        tagged = sorted(int(av) for av in self.engine.state.tagged_skills)
+        direct_requested = set(self._requested_tagged_skills())
+        has_max_skills = any(r.kind == "max_skills" for r in self.requests or [])
+        rows: list[tuple[str, str]] = []
+        for av in tagged:
+            name = ACTOR_VALUE_NAMES.get(int(av), f"AV{av}")
+            if av in direct_requested:
+                source = "Direct request"
+            elif has_max_skills:
+                source = "Auto (Max Skills)"
+            else:
+                source = "Current build"
+            rows.append((name, source))
+        return rows
+
     def selected_perks_rows(self) -> list[tuple[str, int, str]]:
         direct_requested = self.selected_perk_ids()
         has_max_skills = any(r.kind == "max_skills" for r in self.requests or [])
@@ -567,11 +630,12 @@ class BuildController:
         assert self.requests is not None
         state = self.engine.state
         requested_traits = self._requested_traits()
+        tagged_skills = self._resolved_tagged_skills(state_tags=set(state.tagged_skills))
         start = StartingConditions(
             name=state.name,
             sex=state.sex,
             special=dict(state.special),
-            tagged_skills=set(state.tagged_skills),
+            tagged_skills=tagged_skills,
             traits=requested_traits,
             equipment=dict(state.equipment),
             target_level=self.engine.max_level,
@@ -737,3 +801,70 @@ class BuildController:
                 continue
             out.append(int(req.trait_id))
         return out
+
+    def _requested_tagged_skills(self) -> list[int]:
+        assert self.requests is not None
+        out: list[int] = []
+        for req in self.requests:
+            if req.kind != "tagged_skill" or req.tagged_skill_av is None:
+                continue
+            av = int(req.tagged_skill_av)
+            if av not in SKILL_GOVERNING_ATTRIBUTE:
+                continue
+            if av in out:
+                continue
+            out.append(av)
+        return out
+
+    def _resolved_tagged_skills(self, *, state_tags: set[int]) -> set[int]:
+        direct = self._requested_tagged_skills()
+        if direct:
+            chosen = list(direct)
+        elif any(r.kind == "max_skills" for r in (self.requests or [])):
+            chosen = self._auto_tagged_skills_for_max_skills()
+        else:
+            chosen = sorted(int(av) for av in state_tags if int(av) in SKILL_GOVERNING_ATTRIBUTE)
+
+        for av in sorted(int(v) for v in state_tags):
+            if av not in SKILL_GOVERNING_ATTRIBUTE or av in chosen:
+                continue
+            chosen.append(av)
+            if len(chosen) >= 3:
+                break
+        for av in sorted(int(v) for v in SKILL_GOVERNING_ATTRIBUTE):
+            if av in chosen:
+                continue
+            chosen.append(av)
+            if len(chosen) >= 3:
+                break
+        return set(chosen[:3])
+
+    def _auto_tagged_skills_for_max_skills(self) -> list[int]:
+        assert self.requests is not None
+        ordered: list[int] = []
+        # First, prioritize explicit skill targets in request order.
+        for req in self.requests:
+            if req.kind != "actor_value" or req.actor_value is None:
+                continue
+            av = int(req.actor_value)
+            if av not in SKILL_GOVERNING_ATTRIBUTE or av in ordered:
+                continue
+            ordered.append(av)
+            if len(ordered) >= 3:
+                return ordered
+
+        # Then prefer book-starved skills so tags compensate for scarce books.
+        candidates = sorted(
+            (int(av) for av in SKILL_GOVERNING_ATTRIBUTE),
+            key=lambda av: (
+                int(self.skill_books_by_av.get(int(av), 0)),
+                int(av),
+            ),
+        )
+        for av in candidates:
+            if av in ordered:
+                continue
+            ordered.append(av)
+            if len(ordered) >= 3:
+                break
+        return ordered
