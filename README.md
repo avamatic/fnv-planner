@@ -48,7 +48,7 @@ that represents the full character build space.
 - Strict/permissive policy for unsupported raw CTDA conditions in perk eligibility
 - Files: `graph/dependency_graph.py`
 
-#### Condition Parsing (CTDA) ◐
+#### Condition Parsing (CTDA) 🟡
 - Effect-side CTDAs are captured for ENCH/ALCH effect entries
 - Resolver supports:
   - `strict` (default): exclude conditional effects with unknown context
@@ -70,12 +70,12 @@ Logic layer between raw data models and the future UI/optimizer. Validates and s
 - Includes equipment setters, bulk equipment updates, unmet requirement querying, and optional Big Guns support via config
 - Files: `engine/build_engine.py`, `engine/build_config.py`
 
-### Phase 2b — UX Prototyping ◐
+### Phase 2b — UX Prototyping 🟡
 - GUI package was intentionally removed to reset UX direction
 - `BuildUiModel` provides UI-facing data contracts for Build / Progression / Library screens
 - Interactive CLI prototype available at `scripts/prototype_ui.py` for workflow testing
 
-### Phase 3 — Optimizer ⬚
+### Phase 3 — Optimizer ⬜
 - Algorithm that finds optimal builds for user-defined goals (max crit, max DPS, best melee, max skills, etc.)
 - Generate a level-by-level plan for growing the character from 1 to max
 - Export the plan to a document with room for manual notes (e.g., "grab power armor from dead troopers near Hidden Valley at level 1")
@@ -87,7 +87,7 @@ Logic layer between raw data models and the future UI/optimizer. Validates and s
 - Implant planning (maximum implants determined by Endurance)
 - Optional support for modded `Big Guns` skill in optimization and requirement evaluation
 
-### Phase 4 — Beyond Fallout.esm ⬚
+### Phase 4 — Beyond Fallout.esm ⬜
 
 #### DLC Incorporation
 - Read the additional ESMs that ship with the game (HonestHearts.esm, GunRunnersArsenal.esm, OldWorldBlues.esm, etc.)
