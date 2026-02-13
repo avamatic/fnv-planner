@@ -17,6 +17,11 @@ from fnv_planner.models.character import Character
 from fnv_planner.models.constants import ACTOR_VALUE_NAMES, ActorValue
 from fnv_planner.models.derived_stats import compute_stats
 from fnv_planner.models.game_settings import GameSettings
+from fnv_planner.parser.plugin_merge import (
+    default_vanilla_plugins,
+    load_plugin_bytes,
+    parse_records_merged,
+)
 
 
 AV = ActorValue
@@ -28,8 +33,8 @@ DEFAULT_ESM = Path(
 
 def main():
     parser = argparse.ArgumentParser(description="Dump sample character stats")
-    parser.add_argument("--esm", type=Path, default=DEFAULT_ESM,
-                        help="Path to FalloutNV.esm (optional)")
+    parser.add_argument("--esm", type=Path, action="append",
+                        help="Plugin path; repeat in load order (last wins)")
     args = parser.parse_args()
 
     # Build a sample character
@@ -60,17 +65,24 @@ def main():
     # Load GMST + equipment if ESM available
     armors = {}
     weapons = {}
-    if args.esm.exists():
-        print(f"Loading ESM: {args.esm}")
-        data = args.esm.read_bytes()
-        try:
-            gmst = GameSettings.from_esm(data)
-        except ValueError as exc:
-            if "GRUP 'GMST' not found in plugin" in str(exc):
-                print("Warning: GMST GRUP not found; using vanilla defaults.")
-                gmst = GameSettings.defaults()
-            else:
-                raise
+    if args.esm:
+        esm_paths = args.esm
+        existing = [p for p in esm_paths if p.exists()]
+        missing = [p for p in esm_paths if not p.exists()]
+    else:
+        existing, missing = default_vanilla_plugins(DEFAULT_ESM)
+
+    if existing:
+        if missing:
+            print("Warning: some default vanilla plugins are missing and will be skipped:")
+            for p in missing:
+                print(f"  - {p.name}")
+        print(f"Loading plugins: {', '.join(str(p) for p in existing)}")
+        plugin_datas = load_plugin_bytes(existing)
+        gmst = GameSettings.from_plugins(plugin_datas)
+        if not gmst._values:
+            print("Warning: GMST GRUP not found; using vanilla defaults.")
+            gmst = GameSettings.defaults()
 
         # Resolve equipment if ESM is present
         from fnv_planner.parser.effect_resolver import EffectResolver
@@ -79,9 +91,9 @@ def main():
         armor_list = []
         weapon_list = []
         try:
-            resolver = EffectResolver.from_esm(data)
-            armor_list = parse_all_armors(data)
-            weapon_list = parse_all_weapons(data)
+            resolver = EffectResolver.from_plugins(plugin_datas)
+            armor_list = parse_records_merged(plugin_datas, parse_all_armors, missing_group_ok=True)
+            weapon_list = parse_records_merged(plugin_datas, parse_all_weapons, missing_group_ok=True)
             for a in armor_list:
                 resolver.resolve_armor(a)
             for w in weapon_list:
@@ -104,7 +116,10 @@ def main():
                 courier.equipment[0] = shades.form_id
                 print(f"Equipped: {shades.name} (form_id: {shades.form_id:#x})")
     else:
-        print("No ESM found — using vanilla GMST defaults, no equipment")
+        if args.esm and missing:
+            for p in missing:
+                print(f"Error: plugin not found: {p}")
+        print("No plugin found — using vanilla GMST defaults, no equipment")
         gmst = GameSettings.defaults()
 
     # Compute stats

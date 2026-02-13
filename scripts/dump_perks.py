@@ -8,6 +8,11 @@ import argparse
 from pathlib import Path
 
 from fnv_planner.parser.perk_parser import parse_all_perks
+from fnv_planner.parser.plugin_merge import (
+    default_vanilla_plugins,
+    load_plugin_bytes,
+    parse_records_merged,
+)
 
 
 DEFAULT_ESM = Path(
@@ -40,20 +45,33 @@ def format_requirements(perk) -> str:
 
 def main():
     parser = argparse.ArgumentParser(description="Dump FNV perks from ESM")
-    parser.add_argument("--esm", type=Path, default=DEFAULT_ESM,
-                        help="Path to FalloutNV.esm")
+    parser.add_argument("--esm", type=Path, action="append",
+                        help="Plugin path; repeat in load order (last wins).")
     parser.add_argument("--playable-only", action="store_true",
                         help="Only show playable perks")
     parser.add_argument("--traits-only", action="store_true",
                         help="Only show traits")
     args = parser.parse_args()
 
-    if not args.esm.exists():
-        print(f"Error: ESM not found at {args.esm}")
-        raise SystemExit(1)
+    if args.esm:
+        esm_paths = args.esm
+        missing = [p for p in esm_paths if not p.exists()]
+        if missing:
+            for p in missing:
+                print(f"Error: ESM not found at {p}")
+            raise SystemExit(1)
+    else:
+        esm_paths, missing = default_vanilla_plugins(DEFAULT_ESM)
+        if missing:
+            print("Warning: some default vanilla plugins are missing and will be skipped:")
+            for p in missing:
+                print(f"  - {p.name}")
+        if not esm_paths:
+            print("Error: no default plugins found. Pass --esm explicitly.")
+            raise SystemExit(1)
 
-    data = args.esm.read_bytes()
-    perks = parse_all_perks(data)
+    plugin_datas = load_plugin_bytes(esm_paths)
+    perks = parse_records_merged(plugin_datas, parse_all_perks, missing_group_ok=True)
 
     # Filter
     if args.playable_only:

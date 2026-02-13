@@ -46,6 +46,26 @@ class EffectResolver:
         enchs = {e.form_id: e for e in parse_all_enchs(data)}
         return cls(mgefs, enchs, condition_policy=condition_policy)
 
+    @classmethod
+    def from_plugins(
+        cls,
+        plugin_datas: list[bytes],
+        condition_policy: str = "strict",
+    ) -> "EffectResolver":
+        """Build resolver from multiple plugins in load order (last wins)."""
+        from fnv_planner.parser.effect_parser import parse_all_enchs, parse_all_mgefs
+        from fnv_planner.parser.plugin_merge import parse_records_merged
+
+        mgefs = {
+            m.form_id: m
+            for m in parse_records_merged(plugin_datas, parse_all_mgefs, missing_group_ok=True)
+        }
+        enchs = {
+            e.form_id: e
+            for e in parse_records_merged(plugin_datas, parse_all_enchs, missing_group_ok=True)
+        }
+        return cls(mgefs, enchs, condition_policy=condition_policy)
+
     def resolve_enchantment(self, ench_form_id: int) -> list[StatEffect]:
         """Walk ENCH → EFID → MGEF and return stat effects for value modifiers."""
         ench = self._enchs.get(ench_form_id)

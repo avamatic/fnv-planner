@@ -16,6 +16,11 @@ from fnv_planner.models.constants import ActorValue
 from fnv_planner.models.derived_stats import compute_stats
 from fnv_planner.models.game_settings import GameSettings
 from fnv_planner.parser.perk_parser import parse_all_perks
+from fnv_planner.parser.plugin_merge import (
+    default_vanilla_plugins,
+    load_plugin_bytes,
+    parse_records_merged,
+)
 
 
 AV = ActorValue
@@ -36,33 +41,36 @@ INTERESTING_PERKS = [
 
 def main():
     parser = argparse.ArgumentParser(description="Dump perk dependency graph")
-    parser.add_argument("--esm", type=Path, default=DEFAULT_ESM,
-                        help="Path to FalloutNV.esm")
+    parser.add_argument("--esm", type=Path, action="append",
+                        help="Plugin path; repeat in load order (last wins).")
     args = parser.parse_args()
 
-    if not args.esm.exists():
-        print(f"ESM not found: {args.esm}")
-        return
+    if args.esm:
+        esm_paths = args.esm
+        missing = [p for p in esm_paths if not p.exists()]
+        if missing:
+            for p in missing:
+                print(f"ESM not found: {p}")
+            return
+    else:
+        esm_paths, missing = default_vanilla_plugins(DEFAULT_ESM)
+        if missing:
+            print("Warning: some default vanilla plugins are missing and will be skipped:")
+            for p in missing:
+                print(f"  - {p.name}")
+        if not esm_paths:
+            print("Error: no default plugins found. Pass --esm explicitly.")
+            return
 
-    print(f"Loading ESM: {args.esm}")
-    data = args.esm.read_bytes()
-    try:
-        gmst = GameSettings.from_esm(data)
-    except ValueError as exc:
-        if "GRUP 'GMST' not found in plugin" in str(exc):
-            print("Warning: GMST GRUP not found; using vanilla defaults for derived stats.")
-            gmst = GameSettings.defaults()
-        else:
-            raise
-
-    try:
-        perks = parse_all_perks(data)
-    except ValueError as exc:
-        if "GRUP 'PERK' not found in plugin" in str(exc):
-            print("Warning: PERK GRUP not found; graph will be empty.")
-            perks = []
-        else:
-            raise
+    print(f"Loading plugins: {', '.join(str(p) for p in esm_paths)}")
+    plugin_datas = load_plugin_bytes(esm_paths)
+    gmst = GameSettings.from_plugins(plugin_datas)
+    if not gmst._values:
+        print("Warning: GMST GRUP not found in provided plugins; using vanilla defaults.")
+        gmst = GameSettings.defaults()
+    perks = parse_records_merged(plugin_datas, parse_all_perks, missing_group_ok=True)
+    if not perks:
+        print("Warning: PERK GRUP not found in provided plugins; graph will be empty.")
 
     graph = DependencyGraph.build(perks)
 

@@ -194,6 +194,13 @@ python -m scripts.dump_character
 
 # Interactive CLI prototype for Build / Progression / Library flows
 python -m scripts.prototype_ui [--esm /path/to/FalloutNV.esm]
+
+# Plugin stack mode (repeat --esm in load order; last wins)
+python -m scripts.dump_items \
+  --esm "/path/to/FalloutNV.esm" \
+  --esm "/path/to/HonestHearts.esm" \
+  --esm "/path/to/GunRunnersArsenal.esm" \
+  --weapons --playable-only
 ```
 
 ### `dump_items` weapon output notes
@@ -209,6 +216,22 @@ python -m scripts.prototype_ui [--esm /path/to/FalloutNV.esm]
 - `gameplay-distinct`: same display name can still be different gameplay entities (example: base, companion, weak/always-crit variants).
 - `display-distinct`: duplicate names in text output are always labeled so rows are unambiguous.
 - `--dedupe` removes only rows that are display-equivalent (same printed combat profile and effects), not just same name.
+
+### Plugin Load Order
+- Scripts support repeated `--esm` flags to load multiple plugins.
+- Input order is load order; later plugins override earlier ones.
+- Missing record groups in some plugins are tolerated (for example, DLC-only files with no `GMST` or `BOOK` group).
+- With no `--esm`, scripts use this default vanilla order and skip missing files gracefully:
+  - `FalloutNV.esm`
+  - `DeadMoney.esm`
+  - `HonestHearts.esm`
+  - `OldWorldBlues.esm`
+  - `LonesomeRoad.esm`
+  - `GunRunnersArsenal.esm`
+  - `CaravanPack.esm`
+  - `ClassicPack.esm`
+  - `MercenaryPack.esm`
+  - `TribalPack.esm`
 
 ### `dump_items` JSON mode
 - `--format json` emits structured output with selected categories under `categories`.

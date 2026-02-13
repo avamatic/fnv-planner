@@ -19,6 +19,12 @@ from fnv_planner.parser.item_parser import (
     parse_all_consumables,
     parse_all_weapons,
 )
+from fnv_planner.parser.plugin_merge import (
+    default_vanilla_plugins,
+    is_missing_grup_error,
+    load_plugin_bytes,
+    parse_records_merged,
+)
 
 
 DEFAULT_ESM = Path(
@@ -262,20 +268,22 @@ def _weapon_display_name(w, disambiguation_labels: dict[int, str]) -> str:
     return display_name
 
 
-def _safe_parse(parser_fn, data: bytes, label: str):
-    try:
-        return parser_fn(data)
-    except ValueError as exc:
-        if "GRUP" in str(exc) and "not found in plugin" in str(exc):
-            print(f"Warning: GRUP for {label} not found in plugin; skipping.")
-            return []
-        raise
+def _warn_if_missing_all_groups(plugin_datas: list[bytes], parser_fn, label: str) -> None:
+    for data in plugin_datas:
+        try:
+            parser_fn(data)
+            return
+        except Exception as exc:
+            if is_missing_grup_error(exc):
+                continue
+            raise
+    print(f"Warning: GRUP for {label} not found in provided plugins; skipping.")
 
 
 def main():
     parser = argparse.ArgumentParser(description="Dump FNV items from ESM")
-    parser.add_argument("--esm", type=Path, default=DEFAULT_ESM,
-                        help="Path to FalloutNV.esm")
+    parser.add_argument("--esm", type=Path, action="append",
+                        help="Plugin path; repeat in load order (last wins).")
     parser.add_argument("--armor", action="store_true", help="Show armor")
     parser.add_argument("--weapons", action="store_true", help="Show weapons")
     parser.add_argument("--consumables", action="store_true", help="Show consumables")
@@ -294,22 +302,37 @@ def main():
                         help="Output format (default: text)")
     args = parser.parse_args()
 
-    if not args.esm.exists():
-        print(f"Error: ESM not found at {args.esm}")
-        raise SystemExit(1)
+    if args.esm:
+        esm_paths = args.esm
+        missing = [p for p in esm_paths if not p.exists()]
+        if missing:
+            for p in missing:
+                print(f"Error: ESM not found at {p}")
+            raise SystemExit(1)
+    else:
+        esm_paths, missing = default_vanilla_plugins(DEFAULT_ESM)
+        if missing:
+            print("Warning: some default vanilla plugins are missing and will be skipped:")
+            for p in missing:
+                print(f"  - {p.name}")
+        if not esm_paths:
+            print("Error: no default plugins found. Pass --esm explicitly.")
+            raise SystemExit(1)
 
     # If no category selected, show all
     show_all = not (args.armor or args.weapons or args.consumables or args.books)
 
-    data = args.esm.read_bytes()
-    resolver = EffectResolver.from_esm(data)
+    plugin_datas = load_plugin_bytes(esm_paths)
+    resolver = EffectResolver.from_plugins(plugin_datas)
     output: dict[str, object] = {
-        "esm_path": str(args.esm),
+        "esm_paths": [str(p) for p in esm_paths],
         "categories": {},
     }
 
     if show_all or args.armor:
-        armors = _safe_parse(parse_all_armors, data, "armor")
+        armors = parse_records_merged(plugin_datas, parse_all_armors, missing_group_ok=True)
+        if not armors:
+            _warn_if_missing_all_groups(plugin_datas, parse_all_armors, "armor")
         if args.playable_only:
             armors = [a for a in armors if a.is_playable]
         for a in armors:
@@ -342,7 +365,9 @@ def main():
             print(f"Total: {len(armors)} armor\n")
 
     if show_all or args.weapons:
-        weapons = _safe_parse(parse_all_weapons, data, "weapons")
+        weapons = parse_records_merged(plugin_datas, parse_all_weapons, missing_group_ok=True)
+        if not weapons:
+            _warn_if_missing_all_groups(plugin_datas, parse_all_weapons, "weapons")
         for w in weapons:
             resolver.resolve_weapon(w)
         if args.playable_only:
@@ -389,7 +414,9 @@ def main():
             print(f"Total: {len(weapons)} weapons\n")
 
     if show_all or args.consumables:
-        consumables = _safe_parse(parse_all_consumables, data, "consumables")
+        consumables = parse_records_merged(plugin_datas, parse_all_consumables, missing_group_ok=True)
+        if not consumables:
+            _warn_if_missing_all_groups(plugin_datas, parse_all_consumables, "consumables")
         for c in consumables:
             resolver.resolve_consumable(c)
         consumables.sort(key=lambda c: c.name)
@@ -425,7 +452,9 @@ def main():
             print(f"Total: {len(consumables)} consumables\n")
 
     if show_all or args.books:
-        books = _safe_parse(parse_all_books, data, "books")
+        books = parse_records_merged(plugin_datas, parse_all_books, missing_group_ok=True)
+        if not books:
+            _warn_if_missing_all_groups(plugin_datas, parse_all_books, "books")
         skill_books = [b for b in books if b.is_skill_book]
         skill_books.sort(key=lambda b: b.name)
         if args.format == "json":

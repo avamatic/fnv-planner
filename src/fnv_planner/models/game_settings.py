@@ -71,6 +71,14 @@ class GameSettings:
         return cls(_values=parse_all_gmsts(data))
 
     @classmethod
+    def from_plugins(cls, plugin_datas: list[bytes]) -> "GameSettings":
+        """Parse GMST values from multiple plugins in load order (last wins)."""
+        from fnv_planner.parser.gmst_parser import parse_all_gmsts
+        from fnv_planner.parser.plugin_merge import parse_dict_merged
+
+        return cls(_values=parse_dict_merged(plugin_datas, parse_all_gmsts, missing_group_ok=True))
+
+    @classmethod
     def defaults(cls) -> "GameSettings":
         """Return vanilla FNV defaults — usable without an ESM file."""
         return cls(_values=dict(_VANILLA_DEFAULTS))
