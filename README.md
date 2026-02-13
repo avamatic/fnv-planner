@@ -74,6 +74,7 @@ Logic layer between raw data models and the future UI/optimizer. Validates and s
 - GUI package was intentionally removed to reset UX direction
 - `BuildUiModel` provides UI-facing data contracts for Build / Progression / Library screens
 - Interactive CLI prototype available at `scripts/prototype_ui.py` for workflow testing
+- Screen-by-screen GUI spec is defined in `docs/UI_SPEC.md` (includes `Cool Stuff` perk-graph tab)
 
 ### Phase 3 — Optimizer ⬜
 - Algorithm that finds optimal builds for user-defined goals (max crit, max DPS, best melee, max skills, etc.)
