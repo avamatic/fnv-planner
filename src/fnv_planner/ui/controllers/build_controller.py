@@ -482,6 +482,12 @@ class BuildController:
 
         by_edid = {p.editor_id.lower(): int(p.form_id) for p in self.perks.values()}
         by_name = {p.name.lower(): int(p.form_id) for p in self.perks.values()}
+        by_norm: dict[str, int] = {}
+        for perk in sorted(self.perks.values(), key=lambda p: int(p.form_id)):
+            for key in (perk.editor_id, perk.name):
+                token = self._normalize_preset_token(key)
+                if token and token not in by_norm:
+                    by_norm[token] = int(perk.form_id)
 
         selected: set[int] = set()
         unresolved: list[str] = []
@@ -493,12 +499,16 @@ class BuildController:
                 perk_id = by_edid[lowered]
             elif lowered in by_name:
                 perk_id = by_name[lowered]
-            elif lowered.startswith("0x"):
+            else:
+                norm = self._normalize_preset_token(raw)
+                if norm in by_norm:
+                    perk_id = by_norm[norm]
+            if perk_id is None and lowered.startswith("0x"):
                 try:
                     perk_id = int(lowered, 16)
                 except ValueError:
                     perk_id = None
-            elif lowered.isdigit():
+            elif perk_id is None and lowered.isdigit():
                 perk_id = int(lowered, 10)
 
             if perk_id is None or perk_id not in self.perks:
@@ -516,6 +526,10 @@ class BuildController:
                 + (" ..." if len(unresolved) > 5 else ""),
             )
         return True, f"Applied {label} preset ({len(selected)} perks)."
+
+    @staticmethod
+    def _normalize_preset_token(text: str) -> str:
+        return re.sub(r"[^a-z0-9]+", "", text.lower())
 
     def add_trait_request_by_query(self, query: str) -> tuple[bool, str | None]:
         text = query.strip().lower()

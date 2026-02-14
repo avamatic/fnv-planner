@@ -428,7 +428,12 @@ def _optimize_starting_special_for_max_skills(
     # For max-skills planning, SPECIAL implant availability can absorb part
     # of future gate pressure, so creation SPECIAL does not need to front-load
     # every threshold at level 1. Limit this by END-based implant slot budget.
-    _apply_implant_backed_special_relief(minima=minima, perks_by_id=perks_by_id, engine=engine)
+    _apply_implant_backed_special_relief(
+        minima=minima,
+        perks_by_id=perks_by_id,
+        engine=engine,
+        requirements=requirements,
+    )
 
     used = sum(minima.values())
     if used > engine.special_budget:
@@ -486,6 +491,7 @@ def _apply_implant_backed_special_relief(
     minima: dict[int, int],
     perks_by_id: dict[int, Perk],
     engine: BuildEngine,
+    requirements: list[RequirementSpec],
 ) -> None:
     implant_targets = _detect_special_implants(perks_by_id)
     if not implant_targets:
@@ -499,6 +505,16 @@ def _apply_implant_backed_special_relief(
     slot_budget = max(0, baseline_end)
     if slot_budget <= 0:
         return
+
+    deadlines = _special_gate_deadlines(
+        engine,
+        requirements=requirements,
+        perks_by_id=perks_by_id,
+        target_level=int(engine.state.target_level),
+    )
+    implant_ids_by_target: dict[int, list[int]] = {}
+    for implant_id, target_av in implant_targets.items():
+        implant_ids_by_target.setdefault(int(target_av), []).append(int(implant_id))
 
     # Prefer reducing non-INT gate minima so freed budget can move into INT.
     candidates = sorted(
@@ -516,8 +532,77 @@ def _apply_implant_backed_special_relief(
     for av in candidates:
         if relieved >= slot_budget:
             break
+        deadline = int(deadlines.get(int(av), int(engine.state.target_level)))
+        if not _has_reachable_implant_for_deadline(
+            engine,
+            implant_ids=implant_ids_by_target.get(int(av), []),
+            deadline=deadline,
+        ):
+            continue
         minima[int(av)] = max(engine.special_min, int(minima[int(av)]) - 1)
         relieved += 1
+
+
+def _has_reachable_implant_for_deadline(
+    engine: BuildEngine,
+    *,
+    implant_ids: list[int],
+    deadline: int,
+) -> bool:
+    if not implant_ids:
+        return False
+    check_level = max(2, int(deadline))
+    for implant_id in implant_ids:
+        unmet = engine.unmet_requirements_for_perk(int(implant_id), level=check_level)
+        if not unmet:
+            return True
+    return False
+
+
+def _special_gate_deadlines(
+    engine: BuildEngine,
+    *,
+    requirements: list[RequirementSpec],
+    perks_by_id: dict[int, Perk],
+    target_level: int,
+) -> dict[int, int]:
+    out: dict[int, int] = {}
+    perk_levels = [lv for lv in engine.perk_levels() if lv >= 2]
+
+    for req in requirements:
+        if req.kind == "actor_value" and req.actor_value is not None and req.value is not None:
+            av = int(req.actor_value)
+            if av not in SPECIAL_INDICES:
+                continue
+            threshold = _threshold(req.operator, int(req.value))
+            if threshold is None:
+                continue
+            deadline = _requirement_deadline(req, target_level)
+            current = out.get(int(av))
+            if current is None or int(deadline) < int(current):
+                out[int(av)] = int(deadline)
+            continue
+
+        if req.kind != "perk" or req.perk_id is None:
+            continue
+        perk = perks_by_id.get(int(req.perk_id))
+        if perk is None:
+            continue
+        deadlines = [lv for lv in perk_levels if lv >= int(perk.min_level)]
+        if not deadlines:
+            continue
+        deadline = int(deadlines[0])
+        for preq in perk.skill_requirements:
+            av = int(preq.actor_value)
+            if av not in SPECIAL_INDICES:
+                continue
+            threshold = _threshold(preq.operator, int(preq.value))
+            if threshold is None:
+                continue
+            current = out.get(int(av))
+            if current is None or deadline < int(current):
+                out[int(av)] = deadline
+    return out
 
 
 def _ordered_pending_perks(
@@ -761,8 +846,25 @@ def _allocate_implant_special_points(
     if not deficits and not objective_targets:
         return
 
+    target_priority = _special_target_priority(
+        engine,
+        level=level,
+        requirements=requirements,
+        target_level=int(engine.state.target_level),
+        due_by_level=due_level,
+    )
+    ordered_implants = sorted(
+        implant_targets.items(),
+        key=lambda kv: (
+            -float(deficits.get(int(kv[1]), 0.0)),
+            -int(target_priority.get(int(kv[1]), 0)),
+            int(kv[1]),
+            int(kv[0]),
+        ),
+    )
+
     allocation: dict[int, int] = {}
-    for perk_id, target_av in implant_targets.items():
+    for perk_id, target_av in ordered_implants:
         if perk_id in used_implant_ids:
             continue
         perk = perks_by_id.get(perk_id)
@@ -808,6 +910,34 @@ def _allocate_implant_special_points(
         engine.set_creation_special_points(current)
     else:
         engine.allocate_special_points(level, allocation)
+
+
+def _special_target_priority(
+    engine: BuildEngine,
+    *,
+    level: int,
+    requirements: list[RequirementSpec],
+    target_level: int,
+    due_by_level: int | None,
+) -> dict[int, int]:
+    out: dict[int, int] = {}
+    for req in requirements:
+        if req.kind != "actor_value" or req.actor_value is None or req.value is None:
+            continue
+        av = int(req.actor_value)
+        if av not in SPECIAL_INDICES:
+            continue
+        threshold = _threshold(req.operator, int(req.value))
+        if threshold is None:
+            continue
+        deadline = _requirement_deadline(req, target_level)
+        if due_by_level is not None and int(deadline) > int(due_by_level):
+            continue
+        have = int(engine.stats_at(level).effective_special.get(av, 0))
+        if have >= threshold:
+            continue
+        out[av] = max(int(out.get(av, 0)), int(req.priority))
+    return out
 
 
 def _implant_objective_targets(
@@ -1625,7 +1755,7 @@ def _score_max_skills_perk_action(
     if effects.selectable_special_points > 0:
         # Max-skills policy: do not spend perk slots on pure selectable SPECIAL
         # when zero-opportunity-cost paths (creation/implants) are available.
-        pass
+        reasons.append("Skipped selectable SPECIAL due to opportunity-cost policy.")
     reason = " ".join(reasons) if reasons else "Highest projected max-skills gain."
     return score, special_target, reason
 

@@ -370,6 +370,70 @@ def test_plan_build_implants_respect_endurance_capacity_for_special_gates():
     assert result.success is False
 
 
+def test_plan_build_implant_capacity_prefers_higher_priority_special_gate():
+    str_implant = _perk(
+        form_id=0x9255,
+        name="Strength Implant",
+        description="An implant that increases your Strength by 1.",
+        min_level=2,
+        is_playable=False,
+    )
+    per_implant = _perk(
+        form_id=0x9256,
+        name="Perception Implant",
+        description="An implant that increases your Perception by 1.",
+        min_level=2,
+        is_playable=False,
+    )
+    engine = _engine([str_implant, per_implant])
+    start = StartingConditions(
+        sex=0,
+        special={
+            int(AV.STRENGTH): 7,
+            int(AV.PERCEPTION): 7,
+            int(AV.ENDURANCE): 1,
+            int(AV.CHARISMA): 5,
+            int(AV.INTELLIGENCE): 10,
+            int(AV.AGILITY): 5,
+            int(AV.LUCK): 5,
+        },
+        tagged_skills={int(AV.GUNS), int(AV.LOCKPICK), int(AV.SPEECH)},
+        target_level=2,
+    )
+    result = plan_build(
+        engine,
+        GoalSpec(
+            target_level=2,
+            requirements=[
+                RequirementSpec(
+                    kind="actor_value",
+                    actor_value=int(AV.STRENGTH),
+                    operator=">=",
+                    value=8,
+                    by_level=2,
+                    priority=500,
+                    reason="higher priority strength gate",
+                ),
+                RequirementSpec(
+                    kind="actor_value",
+                    actor_value=int(AV.PERCEPTION),
+                    operator=">=",
+                    value=8,
+                    by_level=2,
+                    priority=100,
+                    reason="lower priority perception gate",
+                ),
+            ],
+        ),
+        starting=start,
+        perks_by_id={p.form_id: p for p in [str_implant, per_implant]},
+    )
+
+    assert result.state.creation_special_points.get(int(AV.STRENGTH), 0) == 1
+    assert result.state.creation_special_points.get(int(AV.PERCEPTION), 0) == 0
+    assert any("perception gate" in msg.lower() for msg in result.unmet_requirements)
+
+
 def test_plan_build_endurance_implant_can_expand_implant_capacity():
     end_implant = _perk(
         form_id=0x9253,
@@ -810,6 +874,50 @@ def test_plan_build_max_skills_uses_implant_relief_for_special_gates():
         + with_implants.state.level_plans[4].special_points.get(int(AV.PERCEPTION), 0)
     )
     assert (str_implanted + per_implanted) >= 1
+
+
+def test_plan_build_max_skills_does_not_relieve_special_minimum_for_unreachable_implant():
+    late_str_implant = _perk(
+        form_id=0x9403,
+        name="Strength Implant",
+        description="An implant that increases your Strength by 1.",
+        min_level=10,
+        is_playable=False,
+    )
+    goal = GoalSpec(
+        target_level=4,
+        requirements=[
+            RequirementSpec(kind="max_skills", priority=100, reason="max skills"),
+            RequirementSpec(
+                kind="actor_value",
+                actor_value=int(AV.STRENGTH),
+                operator=">=",
+                value=8,
+                by_level=4,
+                priority=500,
+                reason="strength gate",
+            ),
+        ],
+    )
+    start = _starting(target_level=4)
+
+    with_unreachable_implant = plan_build(
+        _engine([late_str_implant]),
+        goal,
+        starting=start,
+        perks_by_id={late_str_implant.form_id: late_str_implant},
+    )
+    without_implants = plan_build(
+        _engine([]),
+        goal,
+        starting=start,
+        perks_by_id={},
+    )
+
+    assert with_unreachable_implant.state.special[int(AV.STRENGTH)] >= without_implants.state.special[
+        int(AV.STRENGTH)
+    ]
+    assert not any("strength gate" in msg.lower() for msg in without_implants.unmet_requirements)
 
 
 def test_plan_build_max_skills_raises_starting_intelligence():
