@@ -27,6 +27,7 @@ from fnv_planner.parser.book_stats import (
     skill_books_by_actor_value,
 )
 from fnv_planner.parser.item_parser import parse_all_books
+from fnv_planner.parser.perk_classification import detect_challenge_perk_ids
 from fnv_planner.parser.perk_parser import parse_all_perks
 from fnv_planner.parser.plugin_merge import (
     effective_vanilla_level_cap,
@@ -332,6 +333,7 @@ def main() -> None:
                 has_non_base_cap_override=has_override,
             )
         perks = parse_records_merged(plugin_datas, parse_all_perks, missing_group_ok=True)
+        challenge_perk_ids = detect_challenge_perk_ids(plugin_datas, perks)
         books = parse_records_merged(plugin_datas, parse_all_books, missing_group_ok=True)
         books_by_av = placed_skill_book_copies_by_actor_value(plugin_datas, books)
         if not books_by_av:
@@ -345,6 +347,7 @@ def main() -> None:
     else:
         gmst = GameSettings.defaults()
         perks = []
+        challenge_perk_ids = set()
         linked_spells = {}
         linked_spell_bonuses = {}
 
@@ -356,6 +359,7 @@ def main() -> None:
         goal,
         starting=starting,
         perks_by_id=perks_by_id,
+        challenge_perk_ids=challenge_perk_ids,
         linked_spell_names_by_form=linked_spells,
         linked_spell_stat_bonuses_by_form=linked_spell_bonuses,
     )

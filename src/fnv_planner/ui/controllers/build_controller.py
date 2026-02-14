@@ -766,6 +766,7 @@ class BuildController:
             goal,
             starting=start,
             perks_by_id=self.perks,
+            challenge_perk_ids=self.challenge_perk_ids,
             linked_spell_names_by_form=self.linked_spell_names_by_form,
             linked_spell_stat_bonuses_by_form=self.linked_spell_stat_bonuses_by_form,
         )
@@ -834,6 +835,7 @@ class BuildController:
             zero_books_goal,
             starting=start,
             perks_by_id=self.perks,
+            challenge_perk_ids=self.challenge_perk_ids,
             linked_spell_names_by_form=self.linked_spell_names_by_form,
             linked_spell_stat_bonuses_by_form=self.linked_spell_stat_bonuses_by_form,
         )

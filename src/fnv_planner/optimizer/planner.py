@@ -63,6 +63,7 @@ def plan_build(
     *,
     starting: StartingConditions | None = None,
     perks_by_id: dict[int, Perk] | None = None,
+    challenge_perk_ids: set[int] | None = None,
     linked_spell_names_by_form: dict[int, str] | None = None,
     linked_spell_stat_bonuses_by_form: dict[int, dict[int, float]] | None = None,
 ) -> PlanResult:
@@ -72,6 +73,7 @@ def plan_build(
     messages: list[str] = []
     selected_required: list[int] = []
     perks_by_id = perks_by_id or {}
+    challenge_ids = {int(v) for v in (challenge_perk_ids or set())}
     inferred_effects_by_id = {
         int(perk_id): _infer_perk_skill_effects(
             perk,
@@ -109,15 +111,27 @@ def plan_build(
         engine,
         requirements=requirements,
         perks_by_id=perks_by_id,
+        challenge_perk_ids=challenge_ids,
     )
     perk_priority: dict[int, int] = {}
     for req in requirements:
         if req.kind == "perk" and req.perk_id is not None:
+            perk = perks_by_id.get(int(req.perk_id))
+            if _is_zero_cost_perk(perk, challenge_ids):
+                continue
             perk_priority[req.perk_id] = max(perk_priority.get(req.perk_id, 0), int(req.priority))
 
     pending_required = [pid for pid in goal.required_perks]
+    pending_required = [
+        int(pid)
+        for pid in pending_required
+        if not _is_zero_cost_perk(perks_by_id.get(int(pid)), challenge_ids)
+    ]
     for req in requirements:
         if req.kind == "perk" and req.perk_id is not None and req.perk_id not in pending_required:
+            perk = perks_by_id.get(int(req.perk_id))
+            if _is_zero_cost_perk(perk, challenge_ids):
+                continue
             pending_required.append(req.perk_id)
 
     used_implant_ids: set[int] = set()
@@ -237,6 +251,8 @@ def plan_build(
         target_level=target,
         skill_books_by_av=skill_books_by_av,
         inferred_effects_by_id=inferred_effects_by_id,
+        perks_by_id=perks_by_id,
+        challenge_perk_ids=challenge_ids,
     )
     if unmet_requirements:
         messages.extend(unmet_requirements)
@@ -387,6 +403,7 @@ def _optimize_starting_special_for_max_skills(
     *,
     requirements: list[RequirementSpec],
     perks_by_id: dict[int, Perk],
+    challenge_perk_ids: set[int] | None = None,
 ) -> None:
     """When max-skills is requested, bias creation SPECIAL to higher INT first.
 
@@ -415,6 +432,8 @@ def _optimize_starting_special_for_max_skills(
         if req.kind == "perk" and req.perk_id is not None:
             perk = perks_by_id.get(int(req.perk_id))
             if perk is None:
+                continue
+            if _is_zero_cost_perk(perk, challenge_perk_ids):
                 continue
             for preq in perk.skill_requirements:
                 av = int(preq.actor_value)
@@ -809,6 +828,18 @@ def _perk_category_guess(perk: Perk) -> str:
     return "normal"
 
 
+def _is_zero_cost_perk(perk: Perk | None, challenge_perk_ids: set[int] | None = None) -> bool:
+    """Perks that should not consume planner opportunity-cost budget."""
+    if perk is None or perk.is_trait or perk.is_hidden:
+        return False
+    if int(perk.form_id) in (challenge_perk_ids or set()):
+        return True
+    # Fallback heuristic when CHAL-derived ids are unavailable.
+    if "challenge" in perk.editor_id.lower():
+        return True
+    return not bool(perk.is_playable)
+
+
 def _implant_special_target(perk: Perk) -> int | None:
     text = f"{perk.name} {perk.editor_id} {perk.description}".lower()
     if "implant" not in text:
@@ -1149,6 +1180,8 @@ def _evaluate_unmet_requirements(
     target_level: int,
     skill_books_by_av: dict[int, int] | None = None,
     inferred_effects_by_id: dict[int, InferredSkillEffects] | None = None,
+    perks_by_id: dict[int, Perk] | None = None,
+    challenge_perk_ids: set[int] | None = None,
 ) -> list[str]:
     unmet: list[str] = []
     books = {
@@ -1209,6 +1242,9 @@ def _evaluate_unmet_requirements(
         if req.kind == "perk":
             if req.perk_id is None:
                 unmet.append(f"Requirement invalid ({reason}): perk_id missing")
+                continue
+            perk = (perks_by_id or {}).get(int(req.perk_id))
+            if _is_zero_cost_perk(perk, challenge_perk_ids):
                 continue
             char = engine.materialize(deadline)
             owned = 0

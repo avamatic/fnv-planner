@@ -120,6 +120,79 @@ def test_plan_build_reports_missing_required_perk_when_infeasible():
     assert any("Could not schedule required perk" in msg for msg in result.messages)
 
 
+def test_plan_build_treats_challenge_perk_request_as_zero_cost():
+    challenge = _perk(
+        form_id=0x2001,
+        name="Challenge Reward",
+        editor_id="PerkChallengeReward",
+        min_level=2,
+    )
+    normal = _perk(
+        form_id=0x2002,
+        name="Normal Perk",
+        min_level=2,
+    )
+    engine = _engine([challenge, normal])
+    result = plan_build(
+        engine,
+        GoalSpec(
+            target_level=2,
+            requirements=[
+                RequirementSpec(
+                    kind="perk",
+                    perk_id=challenge.form_id,
+                    perk_rank=1,
+                    priority=1000,
+                    reason="challenge reward request",
+                ),
+                RequirementSpec(
+                    kind="perk",
+                    perk_id=normal.form_id,
+                    perk_rank=1,
+                    priority=500,
+                    reason="normal perk request",
+                ),
+            ],
+        ),
+        starting=_starting(target_level=2),
+        perks_by_id={challenge.form_id: challenge, normal.form_id: normal},
+        challenge_perk_ids={challenge.form_id},
+    )
+
+    assert result.state.level_plans[2].perk == normal.form_id
+    assert all("challenge reward request" not in msg for msg in result.unmet_requirements)
+
+
+def test_plan_build_treats_special_perk_request_as_zero_cost():
+    special = _perk(
+        form_id=0x2003,
+        name="Special Passive",
+        min_level=2,
+        is_playable=False,
+    )
+    engine = _engine([special])
+    result = plan_build(
+        engine,
+        GoalSpec(
+            target_level=2,
+            requirements=[
+                RequirementSpec(
+                    kind="perk",
+                    perk_id=special.form_id,
+                    perk_rank=1,
+                    priority=800,
+                    reason="special perk request",
+                ),
+            ],
+        ),
+        starting=_starting(target_level=2),
+        perks_by_id={special.form_id: special},
+    )
+
+    assert all("special perk request" not in msg for msg in result.unmet_requirements)
+    assert result.missing_required_perks == []
+
+
 def test_plan_build_resets_stale_progression_before_solving():
     perk = _perk(form_id=0x3000, name="Reusable Requirement", min_level=2)
     engine = _engine([perk])
