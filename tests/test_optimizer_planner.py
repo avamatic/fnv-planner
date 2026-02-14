@@ -307,6 +307,133 @@ def test_plan_build_prefers_implant_over_intense_training_for_special_gate():
     assert result.state.level_plans[4].perk == required.form_id
 
 
+def test_plan_build_implants_respect_endurance_capacity_for_special_gates():
+    str_implant = _perk(
+        form_id=0x9251,
+        name="Strength Implant",
+        description="An implant that increases your Strength by 1.",
+        min_level=2,
+        is_playable=False,
+    )
+    per_implant = _perk(
+        form_id=0x9252,
+        name="Perception Implant",
+        description="An implant that increases your Perception by 1.",
+        min_level=2,
+        is_playable=False,
+    )
+    engine = _engine([str_implant, per_implant])
+    start = StartingConditions(
+        sex=0,
+        special={
+            int(AV.STRENGTH): 7,
+            int(AV.PERCEPTION): 7,
+            int(AV.ENDURANCE): 1,
+            int(AV.CHARISMA): 5,
+            int(AV.INTELLIGENCE): 10,
+            int(AV.AGILITY): 5,
+            int(AV.LUCK): 5,
+        },
+        tagged_skills={int(AV.GUNS), int(AV.LOCKPICK), int(AV.SPEECH)},
+        target_level=2,
+    )
+    result = plan_build(
+        engine,
+        GoalSpec(
+            target_level=2,
+            requirements=[
+                RequirementSpec(
+                    kind="actor_value",
+                    actor_value=int(AV.STRENGTH),
+                    operator=">=",
+                    value=8,
+                    by_level=2,
+                    priority=500,
+                    reason="strength gate",
+                ),
+                RequirementSpec(
+                    kind="actor_value",
+                    actor_value=int(AV.PERCEPTION),
+                    operator=">=",
+                    value=8,
+                    by_level=2,
+                    priority=500,
+                    reason="perception gate",
+                ),
+            ],
+        ),
+        starting=start,
+        perks_by_id={p.form_id: p for p in [str_implant, per_implant]},
+    )
+
+    assert sum(int(v) for v in result.state.creation_special_points.values()) <= 1
+    assert result.success is False
+
+
+def test_plan_build_endurance_implant_can_expand_implant_capacity():
+    end_implant = _perk(
+        form_id=0x9253,
+        name="Endurance Implant",
+        description="An implant that increases your Endurance by 1.",
+        min_level=2,
+        is_playable=False,
+    )
+    str_implant = _perk(
+        form_id=0x9254,
+        name="Strength Implant",
+        description="An implant that increases your Strength by 1.",
+        min_level=2,
+        is_playable=False,
+    )
+    engine = _engine([end_implant, str_implant])
+    start = StartingConditions(
+        sex=0,
+        special={
+            int(AV.STRENGTH): 7,
+            int(AV.PERCEPTION): 7,
+            int(AV.ENDURANCE): 1,
+            int(AV.CHARISMA): 5,
+            int(AV.INTELLIGENCE): 10,
+            int(AV.AGILITY): 5,
+            int(AV.LUCK): 5,
+        },
+        tagged_skills={int(AV.GUNS), int(AV.LOCKPICK), int(AV.SPEECH)},
+        target_level=2,
+    )
+    result = plan_build(
+        engine,
+        GoalSpec(
+            target_level=2,
+            requirements=[
+                RequirementSpec(
+                    kind="actor_value",
+                    actor_value=int(AV.ENDURANCE),
+                    operator=">=",
+                    value=2,
+                    by_level=2,
+                    priority=500,
+                    reason="endurance gate",
+                ),
+                RequirementSpec(
+                    kind="actor_value",
+                    actor_value=int(AV.STRENGTH),
+                    operator=">=",
+                    value=8,
+                    by_level=2,
+                    priority=500,
+                    reason="strength gate",
+                ),
+            ],
+        ),
+        starting=start,
+        perks_by_id={p.form_id: p for p in [end_implant, str_implant]},
+    )
+
+    assert result.state.creation_special_points.get(int(AV.ENDURANCE), 0) == 1
+    assert result.state.creation_special_points.get(int(AV.STRENGTH), 0) == 1
+    assert result.success is True
+
+
 def test_plan_build_defers_intelligence_implant_without_max_skills_requirement():
     implant = _perk(
         form_id=0x9301,
@@ -608,6 +735,81 @@ def test_plan_build_allocates_skill_books_to_earliest_deadline_first():
 
     assert result.skill_books_used_by_level.get(2, {}).get(int(AV.SCIENCE), 0) == 1
     assert result.skill_books_used_by_level.get(10, {}).get(int(AV.SCIENCE), 0) == 0
+
+
+def test_plan_build_max_skills_uses_implant_relief_for_special_gates():
+    str_implant = _perk(
+        form_id=0x9401,
+        name="Strength Implant",
+        description="An implant that increases your Strength by 1.",
+        min_level=2,
+        is_playable=False,
+    )
+    per_implant = _perk(
+        form_id=0x9402,
+        name="Perception Implant",
+        description="An implant that increases your Perception by 1.",
+        min_level=2,
+        is_playable=False,
+    )
+    engine = _engine([str_implant, per_implant])
+    start = _starting(target_level=4)
+    goal = GoalSpec(
+        target_level=4,
+        requirements=[
+            RequirementSpec(kind="max_skills", priority=100, reason="max skills"),
+            RequirementSpec(
+                kind="actor_value",
+                actor_value=int(AV.STRENGTH),
+                operator=">=",
+                value=8,
+                by_level=4,
+                priority=400,
+                reason="strength gate",
+            ),
+            RequirementSpec(
+                kind="actor_value",
+                actor_value=int(AV.PERCEPTION),
+                operator=">=",
+                value=8,
+                by_level=4,
+                priority=400,
+                reason="perception gate",
+            ),
+        ],
+    )
+
+    without_implants = plan_build(
+        _engine([]),
+        goal,
+        starting=start,
+        perks_by_id={},
+    )
+    with_implants = plan_build(
+        engine,
+        goal,
+        starting=start,
+        perks_by_id={p.form_id: p for p in [str_implant, per_implant]},
+    )
+
+    assert with_implants.state.special[int(AV.INTELLIGENCE)] >= without_implants.state.special[
+        int(AV.INTELLIGENCE)
+    ]
+    assert with_implants.state.special[int(AV.STRENGTH)] <= without_implants.state.special[
+        int(AV.STRENGTH)
+    ]
+    assert with_implants.state.special[int(AV.PERCEPTION)] <= without_implants.state.special[
+        int(AV.PERCEPTION)
+    ]
+    str_implanted = (
+        with_implants.state.creation_special_points.get(int(AV.STRENGTH), 0)
+        + with_implants.state.level_plans[4].special_points.get(int(AV.STRENGTH), 0)
+    )
+    per_implanted = (
+        with_implants.state.creation_special_points.get(int(AV.PERCEPTION), 0)
+        + with_implants.state.level_plans[4].special_points.get(int(AV.PERCEPTION), 0)
+    )
+    assert (str_implanted + per_implanted) >= 1
 
 
 def test_plan_build_max_skills_raises_starting_intelligence():

@@ -425,6 +425,11 @@ def _optimize_starting_special_for_max_skills(
                     continue
                 minima[av] = max(minima[av], min(engine.special_max, threshold))
 
+    # For max-skills planning, SPECIAL implant availability can absorb part
+    # of future gate pressure, so creation SPECIAL does not need to front-load
+    # every threshold at level 1. Limit this by END-based implant slot budget.
+    _apply_implant_backed_special_relief(minima=minima, perks_by_id=perks_by_id, engine=engine)
+
     used = sum(minima.values())
     if used > engine.special_budget:
         return
@@ -474,6 +479,45 @@ def _optimize_starting_special_for_max_skills(
             break
 
     engine.set_special(target)
+
+
+def _apply_implant_backed_special_relief(
+    *,
+    minima: dict[int, int],
+    perks_by_id: dict[int, Perk],
+    engine: BuildEngine,
+) -> None:
+    implant_targets = _detect_special_implants(perks_by_id)
+    if not implant_targets:
+        return
+
+    available_targets = {int(av) for av in implant_targets.values()}
+    if not available_targets:
+        return
+
+    baseline_end = int(minima.get(int(ActorValue.ENDURANCE), engine.special_min))
+    slot_budget = max(0, baseline_end)
+    if slot_budget <= 0:
+        return
+
+    # Prefer reducing non-INT gate minima so freed budget can move into INT.
+    candidates = sorted(
+        [
+            int(av)
+            for av in SPECIAL_INDICES
+            if int(av) in available_targets
+            and int(av) != int(ActorValue.INTELLIGENCE)
+            and int(minima.get(int(av), engine.special_min)) > engine.special_min
+        ],
+        key=lambda av: (-int(minima.get(int(av), engine.special_min)), av),
+    )
+
+    relieved = 0
+    for av in candidates:
+        if relieved >= slot_budget:
+            break
+        minima[int(av)] = max(engine.special_min, int(minima[int(av)]) - 1)
+        relieved += 1
 
 
 def _ordered_pending_perks(
@@ -708,8 +752,13 @@ def _allocate_implant_special_points(
         target_level=engine.state.target_level,
         due_by_level=due_level,
     )
-    use_timing_gain = pre_level_two and _has_max_skills_requirement(requirements)
-    if not deficits and not use_timing_gain:
+    objective_targets = _implant_objective_targets(
+        engine,
+        requirements=requirements,
+        implant_targets=implant_targets,
+        pre_level_two=pre_level_two,
+    )
+    if not deficits and not objective_targets:
         return
 
     allocation: dict[int, int] = {}
@@ -725,13 +774,18 @@ def _allocate_implant_special_points(
         if unmet:
             continue
         needed_now = float(deficits.get(target_av, 0.0)) > 0.0
-        if not needed_now and use_timing_gain:
-            needed_now = _pre_level_two_timing_gain(
-                engine,
-                target_av=int(target_av),
-                target_level=int(engine.state.target_level),
-            ) > 0
+        if not needed_now and int(target_av) in objective_targets:
+            needed_now = True
         if not needed_now:
+            continue
+        if not _can_allocate_implant_slot(
+            engine,
+            used_implant_ids=used_implant_ids,
+            allocation=allocation,
+            target_av=int(target_av),
+            pre_level_two=pre_level_two,
+            level=level,
+        ):
             continue
 
         current_level = 1 if pre_level_two else level
@@ -754,6 +808,47 @@ def _allocate_implant_special_points(
         engine.set_creation_special_points(current)
     else:
         engine.allocate_special_points(level, allocation)
+
+
+def _implant_objective_targets(
+    engine: BuildEngine,
+    *,
+    requirements: list[RequirementSpec],
+    implant_targets: dict[int, int],
+    pre_level_two: bool,
+) -> set[int]:
+    """SPECIAL targets worth taking for objective value (not immediate gates)."""
+    if not pre_level_two or not _has_max_skills_requirement(requirements):
+        return set()
+    targets: set[int] = set()
+    for target_av in implant_targets.values():
+        gain = _pre_level_two_timing_gain(
+            engine,
+            target_av=int(target_av),
+            target_level=int(engine.state.target_level),
+        )
+        if gain > 0:
+            targets.add(int(target_av))
+    return targets
+
+
+def _can_allocate_implant_slot(
+    engine: BuildEngine,
+    *,
+    used_implant_ids: set[int],
+    allocation: dict[int, int],
+    target_av: int,
+    pre_level_two: bool,
+    level: int,
+) -> bool:
+    """True when an implant pick can fit within current END-based slot capacity."""
+    current_level = 1 if pre_level_two else int(level)
+    current_end = int(engine.stats_at(current_level).effective_special.get(int(ActorValue.ENDURANCE), 0))
+    planned_end = int(allocation.get(int(ActorValue.ENDURANCE), 0))
+    used_count = int(len(used_implant_ids))
+    prospective_used = used_count + 1
+    prospective_capacity = current_end + planned_end + (1 if int(target_av) == int(ActorValue.ENDURANCE) else 0)
+    return prospective_used <= max(0, prospective_capacity)
 
 
 def _pre_level_two_timing_gain(
