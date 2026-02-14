@@ -277,7 +277,7 @@ def test_plan_build_prefers_implant_over_intense_training_for_special_gate():
     assert result.state.level_plans[4].perk == required.form_id
 
 
-def test_plan_build_frontloads_intelligence_implant_for_later_gate():
+def test_plan_build_defers_intelligence_implant_without_max_skills_requirement():
     implant = _perk(
         form_id=0x9301,
         name="Intelligence Implant",
@@ -308,8 +308,73 @@ def test_plan_build_frontloads_intelligence_implant_for_later_gate():
 
     assert result.success is True
     assert result.missing_required_perks == []
-    assert result.state.creation_special_points.get(int(AV.INTELLIGENCE), 0) == 1
+    assert result.state.creation_special_points.get(int(AV.INTELLIGENCE), 0) == 0
+    assert result.state.level_plans[4].special_points.get(int(AV.INTELLIGENCE), 0) == 1
     assert result.state.level_plans[4].perk == required.form_id
+
+
+def test_plan_build_frontloads_intelligence_implant_for_max_skills():
+    implant = _perk(
+        form_id=0x9303,
+        name="Intelligence Implant",
+        description="An implant that increases your Intelligence by 1.",
+        min_level=2,
+        is_playable=False,
+    )
+    engine = _engine([implant])
+    result = plan_build(
+        engine,
+        GoalSpec(
+            target_level=4,
+            requirements=[
+                RequirementSpec(kind="max_skills", priority=100, reason="max skills"),
+                RequirementSpec(
+                    kind="actor_value",
+                    actor_value=int(AV.STRENGTH),
+                    operator=">=",
+                    value=8,
+                    priority=300,
+                    reason="build floor",
+                ),
+                RequirementSpec(
+                    kind="actor_value",
+                    actor_value=int(AV.PERCEPTION),
+                    operator=">=",
+                    value=8,
+                    priority=300,
+                    reason="build floor",
+                ),
+                RequirementSpec(
+                    kind="actor_value",
+                    actor_value=int(AV.ENDURANCE),
+                    operator=">=",
+                    value=8,
+                    priority=300,
+                    reason="build floor",
+                ),
+                RequirementSpec(
+                    kind="actor_value",
+                    actor_value=int(AV.CHARISMA),
+                    operator=">=",
+                    value=8,
+                    priority=300,
+                    reason="build floor",
+                ),
+                RequirementSpec(
+                    kind="actor_value",
+                    actor_value=int(AV.AGILITY),
+                    operator=">=",
+                    value=6,
+                    priority=300,
+                    reason="build floor",
+                ),
+            ],
+        ),
+        starting=_starting(target_level=4),
+        perks_by_id={implant.form_id: implant},
+    )
+
+    assert result.state.creation_special_points.get(int(AV.INTELLIGENCE), 0) == 1
 
 
 def test_plan_build_satisfies_actor_value_requirement_by_deadline():

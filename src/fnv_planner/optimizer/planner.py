@@ -708,20 +708,8 @@ def _allocate_implant_special_points(
         target_level=engine.state.target_level,
         due_by_level=due_level,
     )
-    int_deficit = 0.0
-    if pre_level_two:
-        all_deficits = _special_deficits(
-            engine,
-            level=level,
-            pending_required=pending_required,
-            requirements=requirements,
-            perks_by_id=perks_by_id,
-            target_level=engine.state.target_level,
-            due_by_level=None,
-        )
-        int_deficit = float(all_deficits.get(int(ActorValue.INTELLIGENCE), 0.0))
-
-    if not deficits and int_deficit <= 0:
+    use_timing_gain = pre_level_two and _has_max_skills_requirement(requirements)
+    if not deficits and not use_timing_gain:
         return
 
     allocation: dict[int, int] = {}
@@ -737,12 +725,12 @@ def _allocate_implant_special_points(
         if unmet:
             continue
         needed_now = float(deficits.get(target_av, 0.0)) > 0.0
-        if (
-            pre_level_two
-            and int(target_av) == int(ActorValue.INTELLIGENCE)
-            and int_deficit > 0.0
-        ):
-            needed_now = True
+        if not needed_now and use_timing_gain:
+            needed_now = _pre_level_two_timing_gain(
+                engine,
+                target_av=int(target_av),
+                target_level=int(engine.state.target_level),
+            ) > 0
         if not needed_now:
             continue
 
@@ -766,6 +754,38 @@ def _allocate_implant_special_points(
         engine.set_creation_special_points(current)
     else:
         engine.allocate_special_points(level, allocation)
+
+
+def _pre_level_two_timing_gain(
+    engine: BuildEngine,
+    *,
+    target_av: int,
+    target_level: int,
+) -> int:
+    """Return skill-budget gain from applying +1 SPECIAL before level 2.
+
+    Positive values mean front-loading this SPECIAL point improves cumulative
+    earned skill points by target level compared to applying it at level 2.
+    """
+    current = int(engine.stats_at(1).effective_special.get(int(target_av), 0))
+    if current >= 10:
+        return 0
+
+    now = engine.copy()
+    create = dict(now.state.creation_special_points)
+    create[int(target_av)] = create.get(int(target_av), 0) + 1
+    try:
+        now.set_creation_special_points(create)
+    except ValueError:
+        return 0
+
+    deferred = engine.copy()
+    try:
+        deferred.allocate_special_points(2, {int(target_av): 1})
+    except ValueError:
+        return 0
+
+    return int(now.total_skill_budget(target_level) - deferred.total_skill_budget(target_level))
 
 
 def _has_available_implant_for_special_target(
