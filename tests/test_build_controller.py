@@ -203,6 +203,51 @@ def test_apply_real_build_perk_preset_missing_file():
     assert "not found" in message.lower()
 
 
+def test_zero_cost_perk_events_by_level_includes_challenge_and_special():
+    challenge = Perk(
+        form_id=0x7001,
+        editor_id="PerkChallengeReward",
+        name="Challenge Reward",
+        description="",
+        is_trait=False,
+        min_level=6,
+        ranks=1,
+        is_playable=True,
+        is_hidden=False,
+    )
+    special = Perk(
+        form_id=0x7002,
+        editor_id="SpecialPassive",
+        name="Special Passive",
+        description="",
+        is_trait=False,
+        min_level=4,
+        ranks=1,
+        is_playable=False,
+        is_hidden=False,
+    )
+    normal = Perk(
+        form_id=0x7003,
+        editor_id="NormalPerk",
+        name="Normal Perk",
+        description="",
+        is_trait=False,
+        min_level=2,
+        ranks=1,
+        is_playable=True,
+        is_hidden=False,
+    )
+    c = _controller({})
+    c.perks = {p.form_id: p for p in [challenge, special, normal]}
+    c.challenge_perk_ids = {challenge.form_id}
+    c.set_perk_requests({challenge.form_id, special.form_id, normal.form_id})
+
+    events = c.zero_cost_perk_events_by_level()
+    assert events.get(4) == ["Special Passive [special]"]
+    assert events.get(6) == ["Challenge Reward [challenge]"]
+    assert 2 not in events
+
+
 def test_implant_points_by_level_reports_deferred_implant_allocation():
     implant = Perk(
         form_id=0x9101,

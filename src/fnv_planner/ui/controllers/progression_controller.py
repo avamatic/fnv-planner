@@ -29,6 +29,7 @@ class ProgressionController:
     skill_book_usage_by_level: dict[int, dict[int, int]] | None = None
     skill_book_points_by_level: dict[int, dict[int, int]] | None = None
     implant_points_by_level: dict[int, dict[int, int]] | None = None
+    zero_cost_perks_by_level: dict[int, list[str]] | None = None
     flat_skill_bonus_by_level: dict[int, dict[int, int]] | None = None
 
     def __post_init__(self) -> None:
@@ -168,6 +169,15 @@ class ProgressionController:
             for level, per_level in (by_level or {}).items()
         }
 
+    def set_zero_cost_perks_by_level(
+        self,
+        by_level: dict[int, list[str]] | None,
+    ) -> None:
+        self.zero_cost_perks_by_level = {
+            int(level): [str(label) for label in labels]
+            for level, labels in (by_level or {}).items()
+        }
+
     def skill_books_summary(self) -> str:
         rows = self.skill_book_rows_data or []
         if self.skill_books_needed <= 0 and self.skill_books_available <= 0 and not rows:
@@ -243,6 +253,15 @@ class ProgressionController:
             points = int(delta.get(int(av), 0))
             parts.append(f"{name} +{points} implant point(s)")
         detail = ", ".join(parts) if parts else "none"
+        return f"Between L{int(from_level)} and L{int(to_level)}: {detail}"
+
+    def zero_cost_perks_between_levels_label(self, from_level: int, to_level: int) -> str | None:
+        if int(to_level) <= 1:
+            return None
+        labels = (self.zero_cost_perks_by_level or {}).get(int(to_level), [])
+        if not labels:
+            return None
+        detail = ", ".join(labels)
         return f"Between L{int(from_level)} and L{int(to_level)}: {detail}"
 
     def effective_skills_for_level(

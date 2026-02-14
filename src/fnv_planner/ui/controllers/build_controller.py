@@ -390,6 +390,32 @@ class BuildController:
                 labels.append(f"{perk.name} [{category}]")
         return labels
 
+    def zero_cost_perk_events_by_level(self) -> dict[int, list[str]]:
+        """Between-level timeline events for zero-cost perk requests."""
+        assert self.requests is not None
+        out: dict[int, list[str]] = {}
+        seen: set[tuple[int, str]] = set()
+        target = int(self.engine.state.target_level)
+        for req in self.requests:
+            if req.kind != "perk" or req.perk_id is None:
+                continue
+            perk = self.perks.get(int(req.perk_id))
+            if perk is None:
+                continue
+            category = classify_perk(perk, self.challenge_perk_ids).name
+            if category not in {"challenge", "special"}:
+                continue
+            level = max(2, min(target, int(perk.min_level)))
+            label = f"{perk.name} [{category}]"
+            key = (int(level), label)
+            if key in seen:
+                continue
+            seen.add(key)
+            out.setdefault(int(level), []).append(label)
+        for level in out:
+            out[level].sort(key=lambda text: text.lower())
+        return out
+
     def actor_value_options(self) -> list[tuple[int, str]]:
         options: list[tuple[int, str]] = []
         for av in sorted(SPECIAL_INDICES | SKILL_INDICES):
