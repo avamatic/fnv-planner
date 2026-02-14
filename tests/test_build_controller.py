@@ -1,5 +1,3 @@
-from pathlib import Path
-
 from fnv_planner.engine.build_engine import BuildEngine
 from fnv_planner.engine.ui_model import BuildUiModel
 from fnv_planner.graph.dependency_graph import DependencyGraph
@@ -143,64 +141,6 @@ def test_apply_quick_perk_preset_reports_unresolved_entries(tmp_path):
     assert message is not None
     assert "NoSuchPerk" in message
     assert c.selected_perk_ids() == {perk.form_id}
-
-
-def test_apply_real_build_perk_preset_by_name(tmp_path):
-    perk = Perk(
-        form_id=0x31DD8,
-        editor_id="Educated",
-        name="Educated",
-        description="",
-        is_trait=False,
-        min_level=4,
-        ranks=1,
-        is_playable=True,
-        is_hidden=False,
-    )
-    c = _controller({})
-    c.perks = {perk.form_id: perk}
-    preset = tmp_path / "real_build_perks.txt"
-    preset.write_text("Educated\n")
-    c.real_build_perk_preset_path = preset
-
-    ok, message = c.apply_real_build_perk_preset()
-    assert ok is True
-    assert message is not None
-    assert c.selected_perk_ids() == {perk.form_id}
-
-
-def test_apply_real_build_perk_preset_accepts_punctuation_variants(tmp_path):
-    perk = Perk(
-        form_id=0x31DDB,
-        editor_id="SuperSlam",
-        name="Super Slam",
-        description="",
-        is_trait=False,
-        min_level=8,
-        ranks=1,
-        is_playable=True,
-        is_hidden=False,
-    )
-    c = _controller({})
-    c.perks = {perk.form_id: perk}
-    preset = tmp_path / "real_build_perks.txt"
-    preset.write_text("Super Slam!\n")
-    c.real_build_perk_preset_path = preset
-
-    ok, message = c.apply_real_build_perk_preset()
-    assert ok is True
-    assert message is not None
-    assert c.selected_perk_ids() == {perk.form_id}
-
-
-def test_apply_real_build_perk_preset_missing_file():
-    c = _controller({})
-    c.real_build_perk_preset_path = Path("config/does_not_exist_real_build_perks.txt")
-
-    ok, message = c.apply_real_build_perk_preset()
-    assert ok is False
-    assert message is not None
-    assert "not found" in message.lower()
 
 
 def test_zero_cost_perk_events_by_level_includes_challenge_and_special():

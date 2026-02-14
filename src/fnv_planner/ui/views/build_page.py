@@ -84,9 +84,6 @@ class BuildPage(Gtk.Box):
         quick_perk = Gtk.Button(label="Apply Quick Perk List")
         quick_perk.connect("clicked", self._on_apply_quick_perk_preset)
         perk_row.append(quick_perk)
-        real_build_perk = Gtk.Button(label="Apply Real Build Perk List")
-        real_build_perk.connect("clicked", self._on_apply_real_build_perk_preset)
-        perk_row.append(real_build_perk)
         primary_col.append(perk_row)
 
         trait_row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
@@ -484,15 +481,6 @@ class BuildPage(Gtk.Box):
     def _on_apply_quick_perk_preset(self, _button: Gtk.Button) -> None:
         ok, message = self._controller.apply_quick_perk_preset()
         self._status_label.set_text("" if ok else (message or "Could not apply quick perk list"))
-        if ok and message:
-            self._status_label.set_text(message)
-        self.refresh()
-
-    def _on_apply_real_build_perk_preset(self, _button: Gtk.Button) -> None:
-        ok, message = self._controller.apply_real_build_perk_preset()
-        self._status_label.set_text(
-            "" if ok else (message or "Could not apply real build perk list")
-        )
         if ok and message:
             self._status_label.set_text(message)
         self.refresh()

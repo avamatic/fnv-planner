@@ -63,7 +63,6 @@ class BuildController:
     _last_book_dependency_warning: str | None = None
     _inferred_effects_by_id: dict[int, object] = field(default_factory=dict)
     quick_perk_preset_path: Path = Path("config/quick_perks.txt")
-    real_build_perk_preset_path: Path = Path("config/real_build_perks.txt")
 
     def __post_init__(self) -> None:
         if self.requests is None:
@@ -491,9 +490,6 @@ class BuildController:
 
     def apply_quick_perk_preset(self) -> tuple[bool, str | None]:
         return self._apply_perk_preset(self.quick_perk_preset_path, "quick perk")
-
-    def apply_real_build_perk_preset(self) -> tuple[bool, str | None]:
-        return self._apply_perk_preset(self.real_build_perk_preset_path, "real build perk")
 
     def _apply_perk_preset(self, path: Path, label: str) -> tuple[bool, str | None]:
         if not path.exists():

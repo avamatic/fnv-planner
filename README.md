@@ -242,9 +242,6 @@ python -m scripts.smoke_ui --timeout 2.0
 # Build-tab quick perk preset button source file
 # (used by "Apply Quick Perk List")
 cat config/quick_perks.txt
-# Build-tab real-build perk preset button source file
-# (used by "Apply Real Build Perk List")
-cat config/real_build_perks.txt
 
 # Plugin stack mode (repeat --esm in load order; last wins)
 python -m scripts.dump_items \
