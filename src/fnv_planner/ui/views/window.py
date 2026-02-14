@@ -80,7 +80,9 @@ class MainWindow(Adw.ApplicationWindow):
         tabs_box.append(tab_view)
 
         self._build_page = BuildPage(self._build_controller)
-        self._progression_controller.set_anytime_perks([])
+        self._progression_controller.set_anytime_perks(
+            self._build_controller.anytime_desired_perk_labels()
+        )
         self._progression_controller.set_perk_reasons(self._build_controller.perk_reasons())
         self._progression_controller.set_skill_book_usage(
             self._build_controller.needed_skill_books(),
@@ -147,7 +149,9 @@ class MainWindow(Adw.ApplicationWindow):
 
     def _on_build_changed(self) -> None:
         self._sync_title()
-        self._progression_controller.set_anytime_perks([])
+        self._progression_controller.set_anytime_perks(
+            self._build_controller.anytime_desired_perk_labels()
+        )
         self._progression_controller.set_perk_reasons(self._build_controller.perk_reasons())
         self._progression_controller.set_skill_book_usage(
             self._build_controller.needed_skill_books(),

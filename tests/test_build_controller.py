@@ -248,6 +248,26 @@ def test_zero_cost_perk_events_by_level_includes_challenge_and_special():
     assert 2 not in events
 
 
+def test_anytime_desired_perks_excludes_items_scheduled_in_zero_cost_events():
+    special = Perk(
+        form_id=0x7010,
+        editor_id="SpecialPassive",
+        name="Special Passive",
+        description="",
+        is_trait=False,
+        min_level=4,
+        ranks=1,
+        is_playable=False,
+        is_hidden=False,
+    )
+    c = _controller({})
+    c.perks = {special.form_id: special}
+    c.set_perk_requests({special.form_id})
+
+    assert c.zero_cost_perk_events_by_level().get(4) == ["Special Passive [special]"]
+    assert c.anytime_desired_perk_labels() == []
+
+
 def test_implant_points_by_level_reports_deferred_implant_allocation():
     implant = Perk(
         form_id=0x9101,

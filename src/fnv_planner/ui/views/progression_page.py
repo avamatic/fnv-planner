@@ -50,7 +50,7 @@ class ProgressionPage(Gtk.Box):
         self._progression_list.connect("row-selected", self._on_row_selected)
         progression_scroll.set_child(self._progression_list)
 
-        anytime_frame = Gtk.Frame(label="Any-Time Perks (Not Scheduled In Timeline)")
+        anytime_frame = Gtk.Frame(label="Zero-Cost Items (Not Required In Timeline)")
         anytime_frame.set_hexpand(True)
         anytime_frame.set_vexpand(False)
         self.append(anytime_frame)

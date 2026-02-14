@@ -377,6 +377,11 @@ class BuildController:
 
     def anytime_desired_perk_labels(self) -> list[str]:
         assert self.requests is not None
+        scheduled = {
+            label
+            for labels in self.zero_cost_perk_events_by_level().values()
+            for label in labels
+        }
         labels: list[str] = []
         for req in self.requests:
             if req.kind != "perk" or req.perk_id is None:
@@ -387,7 +392,9 @@ class BuildController:
                 continue
             category = classify_perk(perk, self.challenge_perk_ids).name
             if category in {"challenge", "special"}:
-                labels.append(f"{perk.name} [{category}]")
+                label = f"{perk.name} [{category}]"
+                if label not in scheduled:
+                    labels.append(label)
         return labels
 
     def zero_cost_perk_events_by_level(self) -> dict[int, list[str]]:
