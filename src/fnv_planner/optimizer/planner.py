@@ -707,6 +707,14 @@ def _skill_priority(
             if target is None:
                 continue
             deficit = max(0, target - int(current_skills.get(av, 0)))
+            if deficit > 0 and av in SKILL_GOVERNING_ATTRIBUTE:
+                per_book = _effective_skill_book_points(
+                    engine,
+                    deadline=deadline,
+                    inferred_effects_by_id=inferred_effects_by_id,
+                )
+                books = max(0, int((skill_books_by_av or {}).get(int(av), 0)))
+                deficit = max(0, deficit - (books * per_book))
             if deficit > 0:
                 score[av] = score.get(av, 0.0) + urgency + float(deficit * 2)
 
@@ -738,6 +746,15 @@ def _skill_priority(
         if target is None:
             continue
         deficit = max(0, target - int(current_skills.get(av, 0)))
+        if deficit > 0 and av in SKILL_GOVERNING_ATTRIBUTE:
+            deadline = _requirement_deadline(req, target_level)
+            per_book = _effective_skill_book_points(
+                engine,
+                deadline=deadline,
+                inferred_effects_by_id=inferred_effects_by_id,
+            )
+            books = max(0, int((skill_books_by_av or {}).get(int(av), 0)))
+            deficit = max(0, deficit - (books * per_book))
         if deficit <= 0:
             continue
         deadline = _requirement_deadline(req, target_level)
