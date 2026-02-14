@@ -1528,41 +1528,9 @@ def _score_max_skills_perk_action(
             reasons.append(f"Books cover +{gain:.0f} extra skill points.")
 
     if effects.selectable_special_points > 0:
-        target = _best_special_to_raise(
-            trial,
-            level=level,
-            pending_required=pending_required,
-            requirements=requirements,
-            perks_by_id=perks_by_id,
-            target_level=target_level,
-        )
-        if target is None:
-            target = int(ActorValue.INTELLIGENCE)
-        current = int(trial.stats_at(level).effective_special.get(target, 0))
-        if current < 10:
-            if _has_available_implant_for_special_target(
-                engine,
-                level=level,
-                target_av=int(target),
-                perks_by_id=perks_by_id,
-            ):
-                reasons.append("Implant can provide this SPECIAL point; preserve perk slot.")
-                reason = " ".join(reasons) if reasons else "Highest projected max-skills gain."
-                return score, special_target, reason
-            try:
-                trial.allocate_special_points(level, {target: 1})
-                after = trial.stats_at(target_level).skills
-                before = target_stats.skills
-                gain = sum(
-                    max(0, int(after.get(int(av), 0)) - int(before.get(int(av), 0)))
-                    for av in SKILL_GOVERNING_ATTRIBUTE
-                )
-                score += float(gain)
-                special_target = target
-                if gain > 0:
-                    reasons.append(f"SPECIAL allocation projects +{gain:.0f} skill value.")
-            except ValueError:
-                pass
+        # Max-skills policy: do not spend perk slots on pure selectable SPECIAL
+        # when zero-opportunity-cost paths (creation/implants) are available.
+        pass
     reason = " ".join(reasons) if reasons else "Highest projected max-skills gain."
     return score, special_target, reason
 

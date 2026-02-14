@@ -189,6 +189,36 @@ def test_plan_build_uses_intense_training_for_special_gate():
     assert result.state.level_plans[4].perk == required.form_id
 
 
+def test_plan_build_max_skills_does_not_spend_perk_slot_on_intense_training():
+    intense = _perk(
+        form_id=0x9310,
+        name="Intense Training",
+        editor_id="IntenseTraining",
+        min_level=2,
+        ranks=10,
+        entry_point_effects=[
+            PerkEntryPointEffect(
+                entry_point=0,
+                rank_index=0,
+                priority=0,
+                data_payloads=[bytes.fromhex("b238000065cdcdcd")],
+            )
+        ],
+    )
+    engine = _engine([intense])
+    result = plan_build(
+        engine,
+        GoalSpec(
+            target_level=4,
+            requirements=[RequirementSpec(kind="max_skills", priority=100, reason="max skills")],
+        ),
+        starting=_starting(target_level=4),
+        perks_by_id={intense.form_id: intense},
+    )
+
+    assert result.state.level_plans[2].perk != intense.form_id
+
+
 def test_plan_build_uses_special_implant_for_special_gate():
     implant = _perk(
         form_id=0x9101,
