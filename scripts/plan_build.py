@@ -85,6 +85,21 @@ def _load_json_arg(raw_json: str | None, file_path: Path | None) -> dict[str, An
     return payload
 
 
+def _json_safe(value: Any) -> Any:
+    """Recursively normalize values for JSON serialization."""
+    if isinstance(value, dict):
+        return {k: _json_safe(v) for k, v in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_json_safe(v) for v in value]
+    if isinstance(value, set):
+        try:
+            ordered = sorted(value)
+        except TypeError:
+            ordered = sorted(value, key=repr)
+        return [_json_safe(v) for v in ordered]
+    return value
+
+
 def _goal_from_dict(data: dict[str, Any]) -> GoalSpec:
     required = [_parse_int_like(v) for v in data.get("required_perks", [])]
     skill_books_raw = data.get("skill_books_by_av")
@@ -376,7 +391,7 @@ def main() -> None:
             "messages": result.messages,
             "state": asdict(result.state),
         }
-        print(json.dumps(payload, indent=2))
+        print(json.dumps(_json_safe(payload), indent=2))
         return
 
     print(_render_text_result(result, engine=solved_engine, perks_by_id=perks_by_id))
