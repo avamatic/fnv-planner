@@ -164,6 +164,7 @@ fnv-planner/
 │   │   ├── planner.py            # Priority-request planner and level-by-level schedule generation
 │   │   └── specs.py              # GoalSpec, RequirementSpec, StartingConditions
 │   ├── models/
+│   │   ├── avif.py              # AVIF actor-value metadata model
 │   │   ├── character.py          # Character dataclass
 │   │   ├── constants.py          # ActorValue enum, index sets, name mappings
 │   │   ├── derived_stats.py      # DerivedStats formulas, compute_stats()
@@ -174,17 +175,18 @@ fnv-planner/
 │   │   ├── records.py            # Subrecord, RecordHeader, Record, GroupHeader
 │   │   └── spell.py              # Spell model used by weapon/apparel effect resolution
 │   ├── parser/
-│       ├── binary_reader.py      # Low-level typed binary reads
-│       ├── record_reader.py      # GRUP iteration and record extraction
-│       ├── plugin_merge.py       # Plugin stack loading and merge helpers
-│       ├── perk_parser.py        # PERK record parsing
-│       ├── perk_classification.py # Playable/trait/challenge/special classification rules
-│       ├── gmst_parser.py        # GMST record parsing
-│       ├── effect_parser.py      # MGEF + ENCH record parsing
-│       ├── effect_resolver.py    # Item → enchantment → stat effect resolution
-│       ├── item_parser.py        # ARMO, WEAP, ALCH, BOOK record parsing
-│       ├── spell_parser.py       # SPEL parsing and item-linked spell extraction
-│       └── book_stats.py         # Skill-book copy counts and source categorization
+│   │   ├── avif_parser.py        # AVIF parsing and actor-value metadata extraction
+│   │   ├── binary_reader.py      # Low-level typed binary reads
+│   │   ├── record_reader.py      # GRUP iteration and record extraction
+│   │   ├── plugin_merge.py       # Plugin stack loading and merge helpers
+│   │   ├── perk_parser.py        # PERK record parsing
+│   │   ├── perk_classification.py # Playable/trait/challenge/special classification rules
+│   │   ├── gmst_parser.py        # GMST record parsing
+│   │   ├── effect_parser.py      # MGEF + ENCH record parsing
+│   │   ├── effect_resolver.py    # Item → enchantment → stat effect resolution
+│   │   ├── item_parser.py        # ARMO, WEAP, ALCH, BOOK record parsing
+│   │   ├── spell_parser.py       # SPEL parsing and item-linked spell extraction
+│   │   └── book_stats.py         # Skill-book copy counts and source categorization
 │   └── ui/
 │       ├── app.py                # GTK4/Adwaita app entrypoint
 │       ├── bootstrap.py          # Session bootstrap from plugin stack
@@ -193,6 +195,9 @@ fnv-planner/
 │       ├── views/                # GTK page widgets/tabs
 │       └── widgets/              # Reusable GTK components
 ├── scripts/
+│   ├── check_mechanics_matrix_coverage.py # CI guardrail: mechanics matrix coverage
+│   ├── check_mechanics_literals.py # CI guardrail: literal string consistency
+│   ├── audit_mechanics_sources.py  # CI guardrail: mechanics source auditing
 │   ├── dump_character.py         # CLI: build and inspect a character snapshot
 │   ├── dump_graph.py             # CLI: list perks with their requirements
 │   ├── dump_items.py             # CLI: list parsed items with stat effects
@@ -200,13 +205,19 @@ fnv-planner/
 │   ├── audit_perks.py            # CLI: category audit (normal/trait/challenge/special/internal)
 │   ├── audit_skill_books.py      # CLI: skill-book copy counts + source buckets
 │   ├── plan_build.py             # CLI: build planning from goal/start JSON specs
-│   └── prototype_ui.py           # Interactive CLI prototype (Build/Progression/Library)
+│   ├── prototype_ui.py           # Interactive CLI prototype (Build/Progression/Library)
+│   └── smoke_ui.py               # Headless GTK smoke test runner
 └── tests/                        # pytest suite (unit + integration)
 ```
 
 ## Running
 
 ```bash
+# Python 3.12+ is required
+
+# Install/update tooling
+python -m pip install --upgrade pip
+
 # Install in editable mode
 pip install -e ".[dev]"
 
@@ -215,8 +226,16 @@ pip install -e ".[dev]"
 # - Libadwaita
 # - PyGObject (gi bindings)
 
-# Run tests (requires FalloutNV.esm for integration tests)
+# Run full tests (integration-style tests may require FalloutNV.esm)
 pytest
+
+# Run a fast targeted subset (matches CI style)
+pytest -q tests/test_plugin_merge.py tests/test_perk_classification.py
+
+# CI guardrail checks
+python -m scripts.check_mechanics_matrix_coverage
+python -m scripts.check_mechanics_literals
+python -m scripts.audit_mechanics_sources
 
 # Dump parsed data
 python -m scripts.dump_perks --playable-only
