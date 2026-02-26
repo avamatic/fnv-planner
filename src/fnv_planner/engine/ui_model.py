@@ -207,6 +207,9 @@ class BuildUiModel:
             "action_points": float(after.action_points - before.action_points),
             "carry_weight": after.carry_weight - before.carry_weight,
             "crit_chance": after.crit_chance - before.crit_chance,
+            "crit_damage_potential": (
+                after.crit_damage_potential - before.crit_damage_potential
+            ),
             "melee_damage": after.melee_damage - before.melee_damage,
             "unarmed_damage": after.unarmed_damage - before.unarmed_damage,
             "poison_resistance": after.poison_resistance - before.poison_resistance,

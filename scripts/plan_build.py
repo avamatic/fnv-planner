@@ -175,6 +175,34 @@ def _goal_from_dict(data: dict[str, Any]) -> GoalSpec:
                     )
                 )
                 continue
+            if kind == "max_crit":
+                requirements.append(
+                    RequirementSpec(
+                        kind="max_crit",
+                        priority=_parse_int_like(entry.get("priority", 100)),
+                        reason=str(entry.get("reason", "")),
+                        by_level=(
+                            _parse_int_like(entry["by_level"])
+                            if "by_level" in entry and entry["by_level"] is not None
+                            else None
+                        ),
+                    )
+                )
+                continue
+            if kind == "max_crit_damage":
+                requirements.append(
+                    RequirementSpec(
+                        kind="max_crit_damage",
+                        priority=_parse_int_like(entry.get("priority", 100)),
+                        reason=str(entry.get("reason", "")),
+                        by_level=(
+                            _parse_int_like(entry["by_level"])
+                            if "by_level" in entry and entry["by_level"] is not None
+                            else None
+                        ),
+                    )
+                )
+                continue
             if kind in {"experience_multiplier", "damage_multiplier", "crit_chance_bonus"}:
                 raw_value = entry.get("value_float", entry.get("value"))
                 if raw_value is None:
@@ -183,6 +211,26 @@ def _goal_from_dict(data: dict[str, Any]) -> GoalSpec:
                 requirements.append(
                     RequirementSpec(
                         kind=kind,
+                        priority=_parse_int_like(entry.get("priority", 100)),
+                        reason=str(entry.get("reason", "")),
+                        by_level=(
+                            _parse_int_like(entry["by_level"])
+                            if "by_level" in entry and entry["by_level"] is not None
+                            else None
+                        ),
+                        operator=str(entry.get("operator", ">=")),
+                        value_float=value_float,
+                    )
+                )
+                continue
+            if kind == "crit_damage_potential":
+                raw_value = entry.get("value_float", entry.get("value"))
+                if raw_value is None:
+                    raise ValueError("crit_damage_potential requires value/value_float")
+                value_float = float(raw_value)
+                requirements.append(
+                    RequirementSpec(
+                        kind="crit_damage_potential",
                         priority=_parse_int_like(entry.get("priority", 100)),
                         reason=str(entry.get("reason", "")),
                         by_level=(

@@ -39,9 +39,12 @@ class RequirementSpec:
       - "perk": require owning a specific perk rank
       - "trait": require selecting a specific trait
       - "max_skills": require all skills to reach 100
+      - "max_crit": maximize flat critical chance bonus via perk selection
+      - "max_crit_damage": maximize crit-damage-oriented perk value
       - "experience_multiplier": threshold on XP gain multiplier (percent)
       - "damage_multiplier": threshold on outgoing damage multiplier (percent)
       - "crit_chance_bonus": threshold on flat critical chance bonus
+      - "crit_damage_potential": threshold on derived crit-damage potential stat
     """
 
     kind: str

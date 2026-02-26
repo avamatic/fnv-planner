@@ -12,6 +12,7 @@ from fnv_planner.models.constants import (
     SPECIAL_INDICES,
     ActorValue,
 )
+from fnv_planner.models.item import Armor, Weapon
 from fnv_planner.models.perk import Perk
 from fnv_planner.optimizer.specs import GoalSpec, RequirementSpec, StartingConditions
 
@@ -66,6 +67,8 @@ def plan_build(
     challenge_perk_ids: set[int] | None = None,
     linked_spell_names_by_form: dict[int, str] | None = None,
     linked_spell_stat_bonuses_by_form: dict[int, dict[int, float]] | None = None,
+    armors_by_id: dict[int, Armor] | None = None,
+    weapons_by_id: dict[int, Weapon] | None = None,
 ) -> PlanResult:
     """Create a level-by-level plan to satisfy required goals."""
     engine = base_engine.copy()
@@ -228,6 +231,20 @@ def plan_build(
                 perk_selection_reasons[level] = reason
                 picked = perk_id
 
+        has_max_crit = _has_max_crit_requirement(requirements)
+        has_max_crit_damage = _has_max_crit_damage_requirement(requirements)
+        if picked is None and (has_max_crit or has_max_crit_damage):
+            best = _choose_best_max_crit_perk(
+                available=available,
+                inferred_effects_by_id=inferred_effects_by_id,
+                include_damage=has_max_crit_damage,
+            )
+            if best is not None:
+                perk_id, reason = best
+                engine.select_perk(level, perk_id)
+                perk_selection_reasons[level] = reason
+                picked = perk_id
+
         if picked is None and goal.fill_perk_slots and available:
             fallback = min(available)
             engine.select_perk(level, fallback)
@@ -253,6 +270,8 @@ def plan_build(
         inferred_effects_by_id=inferred_effects_by_id,
         perks_by_id=perks_by_id,
         challenge_perk_ids=challenge_ids,
+        armors_by_id=armors_by_id,
+        weapons_by_id=weapons_by_id,
     )
     if unmet_requirements:
         messages.extend(unmet_requirements)
@@ -1182,6 +1201,8 @@ def _evaluate_unmet_requirements(
     inferred_effects_by_id: dict[int, InferredSkillEffects] | None = None,
     perks_by_id: dict[int, Perk] | None = None,
     challenge_perk_ids: set[int] | None = None,
+    armors_by_id: dict[int, Armor] | None = None,
+    weapons_by_id: dict[int, Weapon] | None = None,
 ) -> list[str]:
     unmet: list[str] = []
     books = {
@@ -1214,7 +1235,7 @@ def _evaluate_unmet_requirements(
             if req.actor_value is None or req.value is None:
                 unmet.append(f"Requirement invalid ({reason}): actor_value/value missing")
                 continue
-            stats = engine.stats_at(deadline)
+            stats = engine.stats_at(deadline, armors=armors_by_id, weapons=weapons_by_id)
             av = int(req.actor_value)
             actual_raw = (
                 int(stats.effective_special.get(av, 0))
@@ -1271,7 +1292,7 @@ def _evaluate_unmet_requirements(
             continue
 
         if req.kind == "max_skills":
-            stats = engine.stats_at(deadline)
+            stats = engine.stats_at(deadline, armors=armors_by_id, weapons=weapons_by_id)
             missing: list[str] = []
             for av, val in sorted(stats.skills.items()):
                 if av not in SKILL_GOVERNING_ATTRIBUTE:
@@ -1292,6 +1313,29 @@ def _evaluate_unmet_requirements(
                 unmet.append(
                     f"Requirement unmet (p{req.priority}) by L{deadline}: "
                     f"max skills not reached ({sample}{suffix}) [{reason}]"
+                )
+            continue
+
+        if req.kind == "max_crit":
+            # Meta objective used for perk ranking; no hard threshold to fail.
+            continue
+
+        if req.kind == "max_crit_damage":
+            # Meta objective used for perk ranking; no hard threshold to fail.
+            continue
+
+        if req.kind == "crit_damage_potential":
+            target_val = (
+                float(req.value_float)
+                if req.value_float is not None
+                else float(req.value if req.value is not None else 0)
+            )
+            stats = engine.stats_at(deadline, armors=armors_by_id, weapons=weapons_by_id)
+            actual = float(stats.crit_damage_potential)
+            if not _compare(actual, req.operator, target_val):
+                unmet.append(
+                    f"Requirement unmet (p{req.priority}) by L{deadline}: "
+                    f"Crit damage potential {req.operator} {target_val:g} (actual {actual:.1f}) [{reason}]"
                 )
             continue
 
@@ -1364,9 +1408,22 @@ def _has_max_skills_requirement(requirements: list[RequirementSpec]) -> bool:
     return any(req.kind == "max_skills" for req in requirements)
 
 
+def _has_max_crit_requirement(requirements: list[RequirementSpec]) -> bool:
+    return any(req.kind == "max_crit" for req in requirements)
+
+
+def _has_max_crit_damage_requirement(requirements: list[RequirementSpec]) -> bool:
+    return any(req.kind == "max_crit_damage" for req in requirements)
+
+
 def _has_effect_driven_requirements(requirements: list[RequirementSpec]) -> bool:
     return any(
-        req.kind in {"experience_multiplier", "damage_multiplier", "crit_chance_bonus"}
+        req.kind in {
+            "experience_multiplier",
+            "damage_multiplier",
+            "crit_chance_bonus",
+            "crit_damage_potential",
+        }
         for req in requirements
     )
 
@@ -1606,6 +1663,47 @@ def _choose_best_max_skills_perk(
         if score_value > best_score:
             best_score = score_value
             best = (int(perk_id), special_target, reason)
+    return best
+
+
+def _choose_best_max_crit_perk(
+    *,
+    available: set[int],
+    inferred_effects_by_id: dict[int, InferredSkillEffects],
+    include_damage: bool = False,
+) -> tuple[int, str] | None:
+    best: tuple[int, str] | None = None
+    best_score = 0.0
+    for perk_id in sorted(available):
+        effects = inferred_effects_by_id.get(int(perk_id))
+        if effects is None:
+            continue
+        score = float(effects.crit_chance_bonus_flat)
+        damage_boost_pct = 0.0
+        if include_damage and effects.damage_multiplier_factor is not None:
+            damage_boost_pct = max(0.0, (float(effects.damage_multiplier_factor) - 1.0) * 100.0)
+            score += damage_boost_pct
+        if score <= 0:
+            continue
+        if score > best_score:
+            best_score = score
+            if include_damage and damage_boost_pct > 0:
+                reason = (
+                    f"Max Crit Dmg: boosts crit chance +{effects.crit_chance_bonus_flat:g} "
+                    f"and damage x{float(effects.damage_multiplier_factor):.2f}."
+                )
+            elif include_damage:
+                reason = (
+                    f"Max Crit Dmg: improves critical chance bonus by +{effects.crit_chance_bonus_flat:g}."
+                )
+            else:
+                reason = (
+                    f"Max Crit: increases critical chance bonus by +{effects.crit_chance_bonus_flat:g}."
+                )
+            best = (
+                int(perk_id),
+                reason,
+            )
     return best
 
 

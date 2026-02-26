@@ -2,7 +2,7 @@
 
 ## Overview
 A mod-aware character build planner and optimizer for Fallout: New Vegas. Treats perks like packages with dependencies (SPECIAL stats, skills, challenges, quests) and helps you plan optimal builds level by level.
-The current UI is a GTK4/Libadwaita desktop app centered on a **priority-request** workflow: you describe target outcomes (stats/skills/perks/traits/max-skills), order them by priority, and the planner computes a full build to max level.
+The current UI is a cross-platform web frontend centered on a **priority-request** workflow: you describe target outcomes (stats/skills/perks/traits/max-skills), order them by priority, and the planner computes a full build to max level.
 
 ## Roadmap
 
@@ -71,14 +71,13 @@ Logic layer between raw data models and the future UI/optimizer. Validates and s
 - Includes equipment setters, bulk equipment updates, unmet requirement querying, and optional Big Guns support via config
 - Files: `engine/build_engine.py`, `engine/build_config.py`
 
-### Phase 2b — GTK UI (Adwaita) 🟡
-- GTK4 + Libadwaita UI is active under `fnv_planner.ui`
+### Phase 2b — Cross-Platform Web UI 🟡
+- Static web UI served by Python is active under `webui/` with launcher code in `fnv_planner.webui`.
 - Build page uses ordered priority requests (stat/skill, perk, trait, max-skills bundle)
 - Target level is fixed to detected max level from loaded content
 - Progression page shows full per-level timeline (perk pick, skill distribution, absolute skill values, per-level/cumulative skill-book usage)
 - Challenge/special perks are surfaced as any-time perks (separate from scheduled level timeline)
-- Screen-by-screen spec is in `docs/UI_SPEC.md`
-- Implementation strategy (architecture + Flatpak milestones) is in `docs/UI_IMPLEMENTATION_PLAN.md`
+- Autonomous review flow is provided by Playwright script `scripts/review_webui.py` (interactions + screenshots).
 
 ### Phase 3 — Optimizer 🟡
 - Algorithm that finds optimal builds for user-defined goals (max crit, max DPS, best melee, max skills, etc.)
@@ -145,7 +144,7 @@ Books use a skill_index field (skill = index + 32) instead of enchantments.
 - **Game data parsing**: Custom ESP/ESM parser (Bethesda plugin format)
 - **Dependency graph**: Custom CNF requirement evaluation
 - **Optimization**: Deterministic planner (`fnv_planner.optimizer`)
-- **Desktop UI**: GTK4 + Libadwaita + PyGObject (`fnv_planner.ui`)
+- **UI runtime**: static web frontend + Python HTTP server + Playwright review automation
 - **UX model/CLI**: `BuildUiModel` + `scripts/prototype_ui.py`
 
 ## Project Structure
@@ -187,13 +186,14 @@ fnv-planner/
 │   │   ├── item_parser.py        # ARMO, WEAP, ALCH, BOOK record parsing
 │   │   ├── spell_parser.py       # SPEL parsing and item-linked spell extraction
 │   │   └── book_stats.py         # Skill-book copy counts and source categorization
-│   └── ui/
-│       ├── app.py                # GTK4/Adwaita app entrypoint
-│       ├── bootstrap.py          # Session bootstrap from plugin stack
-│       ├── state.py              # Shared UI session/application state
-│       ├── controllers/          # Build/Progression/Library/Graph UI controllers
-│       ├── views/                # GTK page widgets/tabs
-│       └── widgets/              # Reusable GTK components
+│   ├── ui/
+│   │   ├── app.py                # Compatibility launcher (starts web UI server)
+│   │   ├── bootstrap.py          # Session bootstrap from plugin stack
+│   │   ├── state.py              # Shared UI session/application state
+│   │   └── controllers/          # Toolkit-neutral controller logic used by web state export
+│   └── webui/
+│       ├── export_state.py       # Deterministic UI snapshot export
+│       └── server.py             # Local HTTP server + state generation
 ├── scripts/
 │   ├── check_mechanics_matrix_coverage.py # CI guardrail: mechanics matrix coverage
 │   ├── check_mechanics_literals.py # CI guardrail: literal string consistency
@@ -206,7 +206,9 @@ fnv-planner/
 │   ├── audit_skill_books.py      # CLI: skill-book copy counts + source buckets
 │   ├── plan_build.py             # CLI: build planning from goal/start JSON specs
 │   ├── prototype_ui.py           # Interactive CLI prototype (Build/Progression/Library)
-│   └── smoke_ui.py               # Headless GTK smoke test runner
+│   ├── run_webui.py              # Launch local web UI server
+│   └── review_webui.py           # Playwright interaction + screenshot review runner
+├── webui/                        # Static web frontend (HTML/CSS/JS)
 └── tests/                        # pytest suite (unit + integration)
 ```
 
@@ -221,10 +223,9 @@ python -m pip install --upgrade pip
 # Install in editable mode
 pip install -e ".[dev]"
 
-# Optional UI runtime prerequisites (system packages; not installed by pip):
-# - GTK4
-# - Libadwaita
-# - PyGObject (gi bindings)
+# Optional UI review prerequisites:
+# - playwright Python package
+# - chromium browser installed by Playwright
 
 # Run full tests (integration-style tests may require FalloutNV.esm)
 pytest
@@ -252,11 +253,14 @@ python -m scripts.plan_build --goal-file goal.json --start-file start.json
 # Interactive CLI prototype for Build / Progression / Library flows
 python -m scripts.prototype_ui [--esm /path/to/FalloutNV.esm]
 
-# GTK/Adwaita UI app (GNOME desktop session required)
+# Cross-platform web UI app
 python -m fnv_planner.ui.app
 
-# Headless GUI smoke (no manual loop; uses Broadway virtual display)
-python -m scripts.smoke_ui --timeout 2.0
+# Explicit web UI runner
+python -m scripts.run_webui --port 4173
+
+# Headless autonomous UI review (Playwright)
+python -m scripts.review_webui --out artifacts/ui_review
 
 # Build-tab quick perk preset button source file
 # (used by "Apply Quick Perk List")

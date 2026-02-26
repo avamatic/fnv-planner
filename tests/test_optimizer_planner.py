@@ -1206,6 +1206,112 @@ def test_plan_build_can_satisfy_crit_chance_bonus_requirement():
     assert result.state.level_plans[2].perk == finesse_like.form_id
 
 
+def test_plan_build_max_crit_prefers_crit_bonus_perk():
+    finesse_like = _perk(
+        form_id=0x9310,
+        name="Precision",
+        editor_id="PrecisionPerk",
+        min_level=2,
+        description="+5% chance to get a critical hit.",
+    )
+    filler = _perk(
+        form_id=0x9311,
+        name="Generalist",
+        editor_id="GeneralistPerk",
+        min_level=2,
+        description="+10 carry weight.",
+    )
+    engine = _engine([finesse_like, filler])
+    result = plan_build(
+        engine,
+        GoalSpec(
+            target_level=2,
+            requirements=[
+                RequirementSpec(
+                    kind="max_crit",
+                    priority=100,
+                    reason="maximize crit",
+                )
+            ],
+            maximize_skills=False,
+        ),
+        starting=_starting(target_level=2),
+        perks_by_id={finesse_like.form_id: finesse_like, filler.form_id: filler},
+    )
+
+    assert result.success is True
+    assert result.state.level_plans[2].perk == finesse_like.form_id
+
+
+def test_plan_build_max_crit_damage_prefers_damage_multiplier_perk():
+    damage = _perk(
+        form_id=0x9312,
+        name="Death Dealer",
+        editor_id="DeathDealerPerk",
+        min_level=2,
+        description="10% more damage.",
+    )
+    filler = _perk(
+        form_id=0x9313,
+        name="Generalist",
+        editor_id="GeneralistPerk",
+        min_level=2,
+        description="+10 carry weight.",
+    )
+    engine = _engine([damage, filler])
+    result = plan_build(
+        engine,
+        GoalSpec(
+            target_level=2,
+            requirements=[
+                RequirementSpec(
+                    kind="max_crit_damage",
+                    priority=100,
+                    reason="maximize crit damage",
+                )
+            ],
+            maximize_skills=False,
+        ),
+        starting=_starting(target_level=2),
+        perks_by_id={damage.form_id: damage, filler.form_id: filler},
+    )
+
+    assert result.success is True
+    assert result.state.level_plans[2].perk == damage.form_id
+
+
+def test_crit_damage_potential_requirement_fails_without_gear():
+    filler = _perk(
+        form_id=0x9314,
+        name="Generalist",
+        editor_id="GeneralistPerk",
+        min_level=2,
+        description="+10 carry weight.",
+    )
+    engine = _engine([filler])
+    result = plan_build(
+        engine,
+        GoalSpec(
+            target_level=2,
+            requirements=[
+                RequirementSpec(
+                    kind="crit_damage_potential",
+                    operator=">=",
+                    value_float=10.0,
+                    priority=200,
+                    reason="require crit weapon payload",
+                )
+            ],
+            maximize_skills=False,
+        ),
+        starting=_starting(target_level=2),
+        perks_by_id={filler.form_id: filler},
+    )
+
+    assert result.success is False
+    assert any("Crit damage potential" in msg for msg in result.unmet_requirements)
+
+
 def test_max_skills_does_not_pick_book_perk_when_books_have_no_utility():
     # Trait overcaps all skills so max-skills has no remaining deficits.
     overcap_trait = _perk(

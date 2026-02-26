@@ -1,5 +1,9 @@
 # UI Implementation Plan
 
+> Status: superseded. This document describes the prior GTK-first plan.
+> Active UI implementation is the cross-platform web UI under `/webui`
+> with launch/review entrypoints in `/scripts/run_webui.py` and `/scripts/review_webui.py`.
+
 This plan defines how we will implement the app UI with a GNOME-native first approach while keeping the core code portable for a future cross-platform frontend.
 
 ## 1) Decision Summary

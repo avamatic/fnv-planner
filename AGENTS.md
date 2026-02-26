@@ -23,8 +23,9 @@ Integration-style tests and many scripts expect Fallout plugin data (`FalloutNV.
 - `python -m scripts.audit_mechanics_sources`
 
 ## Running the project
-- GTK app: `python -m fnv_planner.ui.app`
-- Headless UI smoke test: `python -m scripts.smoke_ui --timeout 2.0`
+- Web UI app (cross-platform): `python -m fnv_planner.ui.app`
+- Explicit web UI runner: `python -m scripts.run_webui --port 4173`
+- Headless UI review (Playwright): `python -m scripts.review_webui --out artifacts/ui_review`
 - Planner CLI from JSON specs:
   - `python -m scripts.plan_build --goal-file goal.json --start-file start.json`
   - `python -m scripts.plan_build --goal-json '{"required_perks":[4096],"target_level":20}' --start-json '{"sex":0,"special":{"strength":7,"perception":7,"endurance":6,"charisma":6,"intelligence":5,"agility":5,"luck":4},"tagged_skills":["guns","lockpick","speech"]}'`
@@ -59,13 +60,14 @@ The codebase is a layered pipeline: **plugin bytes → parsed domain models → 
 - It validates mutations eagerly, materializes character snapshots by level, and caches stats with directional invalidation for performance.
 - This is the canonical API for selecting perks, allocating skill/SPECIAL points, equipment, and checking unmet requirements.
 
-### 5) UI-facing adapter and GTK app (`src/fnv_planner/engine/ui_model.py`, `src/fnv_planner/ui`)
+### 5) UI-facing adapter and web UI (`src/fnv_planner/engine/ui_model.py`, `src/fnv_planner/webui`, `src/fnv_planner/ui`)
 - `BuildUiModel` is intentionally GUI-agnostic and exposes stable view data (selected entities, progression snapshots, comparisons, diagnostics, gear catalog).
-- GTK app bootstrapping (`ui/bootstrap.py`) builds a full session by:
+- Session bootstrapping (`ui/bootstrap.py`) builds a full session by:
   - resolving/loading plugin stack,
   - parsing/merging perks/items/books/spells/AVIF,
   - constructing `DependencyGraph`, `BuildEngine`, and `BuildUiModel`.
-- Controllers/views/widgets in `src/fnv_planner/ui` consume this session/state split.
+- `fnv_planner.webui` exports deterministic state JSON and serves the static web frontend.
+- Playwright review automation (`scripts/review_webui.py`) drives interaction and screenshot capture for autonomous UI review.
 
 ### 6) Deterministic planner (`src/fnv_planner/optimizer`)
 - `optimizer/planner.py` runs a feasibility-first, level-by-level solver around a copied `BuildEngine`.

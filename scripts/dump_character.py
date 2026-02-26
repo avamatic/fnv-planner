@@ -147,6 +147,7 @@ def main():
     print(f"  Action Points       {stats.action_points:>6}")
     print(f"  Carry Weight        {stats.carry_weight:>6.0f}")
     print(f"  Critical Chance     {stats.crit_chance:>5.0f}%")
+    print(f"  Crit Dmg Potential  {stats.crit_damage_potential:>6.1f}")
     print(f"  Melee Damage Bonus  {stats.melee_damage:>6.1f}")
     print(f"  Unarmed Damage      {stats.unarmed_damage:>6.2f}")
     print(f"  Poison Resistance   {stats.poison_resistance:>5.0f}%")

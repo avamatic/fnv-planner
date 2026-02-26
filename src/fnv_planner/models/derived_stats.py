@@ -157,6 +157,27 @@ def compute_equipment_bonuses(
     return bonuses
 
 
+def compute_crit_damage_potential(
+    character: Character,
+    weapons: dict[int, Weapon],
+) -> float:
+    """Estimate crit-damage potential from currently equipped weapons.
+
+    The metric is the best equipped weapon's crit payload:
+      crit_damage * max(1.0, crit_multiplier)
+    """
+    best = 0.0
+    for _slot, form_id in character.equipment.items():
+        weapon = weapons.get(form_id)
+        if weapon is None:
+            continue
+        mult = float(weapon.crit_multiplier) if float(weapon.crit_multiplier) > 0 else 1.0
+        payload = float(weapon.crit_damage) * mult
+        if payload > best:
+            best = payload
+    return best
+
+
 @dataclass
 class CharacterStats:
     """Complete computed stat snapshot for a character build."""
@@ -168,6 +189,7 @@ class CharacterStats:
 
     # Combat
     crit_chance: float = 0.0
+    crit_damage_potential: float = 0.0
     melee_damage: float = 0.0
     unarmed_damage: float = 0.0
 
@@ -254,12 +276,14 @@ def compute_stats(
 
     # Unarmed damage uses the computed unarmed skill
     unarmed_skill = skills.get(ActorValue.UNARMED, 0)
+    crit_damage_potential = compute_crit_damage_potential(character, weapons)
 
     return CharacterStats(
         hit_points=calc.hit_points(endurance, character.level),
         action_points=calc.action_points(agility),
         carry_weight=calc.carry_weight(strength),
         crit_chance=calc.crit_chance(luck),
+        crit_damage_potential=crit_damage_potential,
         melee_damage=calc.melee_damage(strength),
         unarmed_damage=calc.unarmed_damage(unarmed_skill),
         poison_resistance=calc.poison_resistance(endurance),

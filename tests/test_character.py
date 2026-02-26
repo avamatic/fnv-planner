@@ -14,7 +14,7 @@ from fnv_planner.models.derived_stats import (
 )
 from fnv_planner.models.effect import StatEffect
 from fnv_planner.models.game_settings import GameSettings, _VANILLA_DEFAULTS
-from fnv_planner.models.item import Armor
+from fnv_planner.models.item import Armor, Weapon
 
 
 ESM_PATH = Path(
@@ -255,6 +255,7 @@ def test_compute_stats_returns_character_stats():
     assert stats.action_points == 80  # AGI 5
     assert stats.carry_weight == pytest.approx(200.0)  # STR 5
     assert stats.crit_chance == pytest.approx(5.0)     # LCK 5
+    assert stats.crit_damage_potential == pytest.approx(0.0)
     assert stats.skill_points_per_level == 13  # INT 5
     assert stats.max_level == 50
     assert stats.companion_nerve == pytest.approx(25.0)  # CHA 5
@@ -298,6 +299,52 @@ def test_compute_stats_level_20():
     assert stats.skill_points_per_level == 15
     # Guns (governed by AGI=5): 2 + 5*2 + 3 = 15, + tag 15, + spent 50 = 80
     assert stats.skills[AV.GUNS] == 80
+
+
+def test_crit_damage_potential_uses_best_equipped_weapon():
+    c = Character()
+    primary = Weapon(
+        form_id=0xE001,
+        editor_id="PrimaryWeapon",
+        name="Primary",
+        value=10,
+        health=100,
+        weight=5.0,
+        damage=20,
+        clip_size=10,
+        crit_damage=12,
+        crit_multiplier=2.0,
+        equipment_slot=1,
+        enchantment_form_id=None,
+        is_playable=True,
+    )
+    backup = Weapon(
+        form_id=0xE002,
+        editor_id="BackupWeapon",
+        name="Backup",
+        value=10,
+        health=100,
+        weight=5.0,
+        damage=18,
+        clip_size=10,
+        crit_damage=30,
+        crit_multiplier=0.0,
+        equipment_slot=2,
+        enchantment_form_id=None,
+        is_playable=True,
+    )
+    c.equipment[1] = primary.form_id
+    c.equipment[2] = backup.form_id
+
+    stats = compute_stats(
+        c,
+        GameSettings.defaults(),
+        armors={},
+        weapons={primary.form_id: primary, backup.form_id: backup},
+    )
+
+    # max(12*2.0, 30*1.0) = 30.0
+    assert stats.crit_damage_potential == pytest.approx(30.0)
 
 
 # --- Integration test: equipment from real ESM ---

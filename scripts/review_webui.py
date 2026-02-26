@@ -9,7 +9,7 @@ import threading
 import time
 from pathlib import Path
 
-from fnv_planner.webui.server import WEBUI_DIR, make_server, write_state
+from fnv_planner.webui.server import WEBUI_DIR, make_server
 
 
 def _free_port() -> int:
@@ -37,8 +37,6 @@ def main() -> None:
     out = args.out.resolve()
     out.mkdir(parents=True, exist_ok=True)
 
-    write_state(WEBUI_DIR / "state.json")
-
     port = args.port or _free_port()
     server = make_server(args.host, port, WEBUI_DIR)
     thread = threading.Thread(target=server.serve_forever, daemon=True)
@@ -52,9 +50,11 @@ def main() -> None:
         with sync_playwright() as p:
             browser = p.chromium.launch(headless=True)
             page = browser.new_page(viewport={"width": 1440, "height": 1000})
+            page.set_default_timeout(120000)
             page.goto(base_url, wait_until="domcontentloaded")
 
             page.locator("#app-title").wait_for()
+            page.locator("#meta-max-crit-dmg").wait_for()
             checks.append("Loaded app shell")
             page.screenshot(path=str(out / "01_build.png"), full_page=True)
 

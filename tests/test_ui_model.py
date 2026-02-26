@@ -112,6 +112,7 @@ def test_progression_and_compare_levels():
     assert cmp.from_level == 1
     assert cmp.to_level == 4
     assert cmp.stat_deltas["hit_points"] > 0
+    assert "crit_damage_potential" in cmp.stat_deltas
     assert cmp.skill_deltas[AV.GUNS] >= 5
 
 

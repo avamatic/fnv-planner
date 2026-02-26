@@ -22,3 +22,8 @@ build/
 
 # ESM data (large binary, user-supplied)
 *.esm
+NV_GAME_FILES/
+
+# Generated UI artifacts
+webui/state.json
+artifacts/
