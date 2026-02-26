@@ -4,6 +4,7 @@ from fnv_planner.graph.dependency_graph import DependencyGraph
 from fnv_planner.models.constants import ActorValue
 from fnv_planner.models.game_settings import GameSettings
 from fnv_planner.models.perk import Perk
+from fnv_planner.optimizer.planner import PlanResult
 from fnv_planner.ui.controllers.build_controller import BuildController
 from fnv_planner.ui.state import UiState
 
@@ -188,6 +189,39 @@ def test_zero_cost_perk_events_by_level_includes_challenge_and_special():
     assert 2 not in events
 
 
+def test_max_crit_request_auto_selects_crit_bonus_perk():
+    crit_perk = Perk(
+        form_id=0x7100,
+        editor_id="PrecisionPerk",
+        name="Precision",
+        description="+5% chance to get a critical hit.",
+        is_trait=False,
+        min_level=2,
+        ranks=1,
+        is_playable=True,
+        is_hidden=False,
+    )
+    filler_perk = Perk(
+        form_id=0x7101,
+        editor_id="GeneralistPerk",
+        name="Generalist",
+        description="+10 Carry Weight.",
+        is_trait=False,
+        min_level=2,
+        ranks=1,
+        is_playable=True,
+        is_hidden=False,
+    )
+    c = _controller(
+        {},
+        perks={crit_perk.form_id: crit_perk, filler_perk.form_id: filler_perk},
+    )
+    c.add_max_crit_request()
+
+    rows = c.selected_perks_rows()
+    assert any(name == "Precision" and source == "Auto (Max Crit)" for name, _level, source in rows)
+
+
 def test_anytime_desired_perks_excludes_items_scheduled_in_zero_cost_events():
     special = Perk(
         form_id=0x7010,
@@ -225,3 +259,130 @@ def test_implant_points_by_level_reports_deferred_implant_allocation():
     assert ok is True
     assert message is None
     assert c.implant_points_by_level() == {c.target_level: {int(AV.PERCEPTION): 1}}
+
+
+def test_set_meta_request_enabled_can_remove_and_add_max_crit():
+    c = _controller({})
+    c.set_meta_request_enabled("max_crit", True)
+    assert any(req["kind"] == "max_crit" for req in c.priority_request_payloads())
+
+    c.set_meta_request_enabled("max_crit", False)
+    assert not any(req["kind"] == "max_crit" for req in c.priority_request_payloads())
+
+
+def test_add_crit_damage_potential_request_is_reflected_in_rows():
+    c = _controller({})
+    ok, message = c.add_crit_damage_potential_request(40, reason="sniper goal")
+    assert ok is True
+    assert message is None
+    rows = c.priority_request_rows()
+    assert any("Crit Dmg Potential >= 40" in text for _idx, text in rows)
+
+
+def test_max_crit_damage_request_auto_selects_damage_perk():
+    damage_perk = Perk(
+        form_id=0x7200,
+        editor_id="DamagePerk",
+        name="Damage Focus",
+        description="10% more damage.",
+        is_trait=False,
+        min_level=2,
+        ranks=1,
+        is_playable=True,
+        is_hidden=False,
+    )
+    filler_perk = Perk(
+        form_id=0x7201,
+        editor_id="FillerPerk",
+        name="Filler",
+        description="+5 to Barter.",
+        is_trait=False,
+        min_level=2,
+        ranks=1,
+        is_playable=True,
+        is_hidden=False,
+    )
+    c = _controller({}, perks={damage_perk.form_id: damage_perk, filler_perk.form_id: filler_perk})
+    c.add_max_crit_damage_request()
+    rows = c.selected_perks_rows()
+    assert any(name == "Damage Focus" and source == "Auto (Max Crit Dmg)" for name, _lv, source in rows)
+
+
+def test_perk_request_statuses_primary_vs_secondary(monkeypatch):
+    green = Perk(
+        form_id=0x7300,
+        editor_id="AlwaysGood",
+        name="Always Good",
+        description="",
+        is_trait=False,
+        min_level=2,
+        ranks=1,
+        is_playable=True,
+        is_hidden=False,
+    )
+    yellow = Perk(
+        form_id=0x7301,
+        editor_id="SecondaryConflict",
+        name="Secondary Conflict",
+        description="",
+        is_trait=False,
+        min_level=2,
+        ranks=1,
+        is_playable=True,
+        is_hidden=False,
+    )
+    red = Perk(
+        form_id=0x7302,
+        editor_id="PrimaryConflict",
+        name="Primary Conflict",
+        description="",
+        is_trait=False,
+        min_level=2,
+        ranks=1,
+        is_playable=True,
+        is_hidden=False,
+    )
+
+    c = _controller({}, perks={green.form_id: green, yellow.form_id: yellow, red.form_id: red})
+
+    def _fake_plan_build(base_engine, goal, **_kwargs):
+        perk_ids = [
+            int(req.perk_id)
+            for req in goal.requirements
+            if req.kind == "perk" and req.perk_id is not None
+        ]
+        if not perk_ids:
+            return PlanResult(success=True, state=base_engine.state)
+
+        perk_id = perk_ids[0]
+        other_kinds = [req.kind for req in goal.requirements if req.kind != "perk"]
+        has_secondary = "max_crit" in other_kinds
+
+        if perk_id == int(red.form_id):
+            return PlanResult(
+                success=False,
+                state=base_engine.state,
+                unmet_requirements=["Sex: Female"],
+            )
+        if perk_id == int(yellow.form_id):
+            if has_secondary:
+                return PlanResult(
+                    success=False,
+                    state=base_engine.state,
+                    unmet_requirements=["Conflicts with secondary request"],
+                )
+            return PlanResult(success=True, state=base_engine.state)
+        return PlanResult(success=True, state=base_engine.state)
+
+    monkeypatch.setattr("fnv_planner.ui.controllers.build_controller.plan_build", _fake_plan_build)
+
+    ok, message = c.add_actor_value_request(int(AV.GUNS), 75, reason="primary")
+    assert ok is True
+    assert message is None
+    c.add_max_crit_request()
+
+    statuses = c.perk_request_statuses([green.form_id, yellow.form_id, red.form_id])
+
+    assert statuses[int(green.form_id)]["status"] == "green"
+    assert statuses[int(yellow.form_id)]["status"] == "yellow"
+    assert statuses[int(red.form_id)]["status"] == "red"

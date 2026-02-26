@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>FNV Planner Web UI</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <header class="app-header">
+      <div class="app-title-row">
+        <h1 id="app-title">FNV Planner</h1>
+        <span id="app-game-badge" class="game-badge">FNV</span>
+      </div>
+      <p id="app-meta"></p>
+      <p id="flash" aria-live="polite"></p>
+    </header>
+
+    <nav class="tabs" aria-label="Primary">
+      <button class="tab active" data-tab="build" aria-controls="panel-build">Build</button>
+      <button class="tab" data-tab="progression" aria-controls="panel-progression">Progression</button>
+      <button class="tab" data-tab="library" aria-controls="panel-library">Library</button>
+      <button class="tab" data-tab="diagnostics" aria-controls="panel-diagnostics">Diagnostics</button>
+    </nav>
+
+    <main>
+      <section id="panel-build" class="panel active" data-panel="build"></section>
+      <section id="panel-progression" class="panel" data-panel="progression"></section>
+      <section id="panel-library" class="panel" data-panel="library"></section>
+      <section id="panel-diagnostics" class="panel" data-panel="diagnostics"></section>
+    </main>
+
+    <script type="module" src="./app.js"></script>
+  </body>
+</html>

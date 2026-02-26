@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import os
 from pathlib import Path
 import re
 
@@ -24,6 +25,8 @@ from fnv_planner.parser.item_parser import parse_all_armors, parse_all_books, pa
 from fnv_planner.parser.perk_classification import detect_challenge_perk_ids
 from fnv_planner.parser.perk_parser import parse_all_perks
 from fnv_planner.parser.plugin_merge import (
+    banner_title_for_game,
+    detect_game_variant,
     effective_vanilla_level_cap,
     has_non_base_level_cap_override,
     load_plugin_bytes,
@@ -37,9 +40,55 @@ from fnv_planner.parser.spell_parser import (
 from fnv_planner.ui.state import PluginSourceState, UiState
 
 
-DEFAULT_ESM = Path(
-    "/home/am/.local/share/Steam/steamapps/common/Fallout New Vegas/Data/FalloutNV.esm"
-)
+def _default_esm_candidates() -> list[Path]:
+    """Return likely Fallout NV/FO3 plugin locations across environments."""
+    env_path = os.environ.get("FNV_ESM") or os.environ.get("FALLOUT_ESM")
+    candidates: list[Path] = []
+    if env_path:
+        candidates.append(Path(env_path).expanduser())
+
+    home = Path.home()
+    repo_root = Path(__file__).resolve().parents[3]
+    candidates.extend(
+        [
+            # Repo-local game data drop.
+            repo_root / "NV_GAME_FILES/Data/FalloutNV.esm",
+            # SteamCMD/manual install (common local path on macOS setups).
+            home / "Games/FNV/Data/FalloutNV.esm",
+            # Native Linux Steam install.
+            home / ".local/share/Steam/steamapps/common/Fallout New Vegas/Data/FalloutNV.esm",
+            # Wine/Proton-style path if Steam libraries are mirrored under home.
+            home / ".steam/steam/steamapps/common/Fallout New Vegas/Data/FalloutNV.esm",
+            # Common Fallout 3 installs.
+            home / "Games/FO3/Data/Fallout3.esm",
+            home / ".local/share/Steam/steamapps/common/Fallout 3 goty/Data/Fallout3.esm",
+            home / ".local/share/Steam/steamapps/common/Fallout 3/Data/Fallout3.esm",
+            home / ".steam/steam/steamapps/common/Fallout 3 goty/Data/Fallout3.esm",
+            home / ".steam/steam/steamapps/common/Fallout 3/Data/Fallout3.esm",
+        ]
+    )
+    return candidates
+
+
+def _split_path_list(raw: str) -> list[str]:
+    values = [raw]
+    if os.pathsep and os.pathsep not in {",", ";"}:
+        next_values: list[str] = []
+        for item in values:
+            next_values.extend(item.split(os.pathsep))
+        values = next_values
+
+    parts: list[str] = []
+    for item in values:
+        parts.extend(re.split(r"[\n,;]+", item))
+    return [p.strip() for p in parts if p.strip()]
+
+
+def _env_plugin_paths() -> list[Path] | None:
+    raw = os.environ.get("FALLOUT_PLUGINS") or os.environ.get("FNV_PLUGINS")
+    if not raw:
+        return None
+    return [Path(value).expanduser() for value in _split_path_list(raw)]
 
 AV = ActorValue
 
@@ -106,19 +155,38 @@ def _avif_descriptions_by_actor_value(avifs: list[ActorValueInfo]) -> dict[int, 
     return out
 
 
-def bootstrap_default_session() -> tuple[BuildSession, UiState]:
+def bootstrap_default_session(
+    explicit_plugin_paths: list[Path] | None = None,
+) -> tuple[BuildSession, UiState]:
     """Build a UI session using default vanilla plugin resolution."""
     plugin_datas: list[bytes] = []
     source = PluginSourceState(mode="defaults")
+    game_variant = "fallout-nv"
 
-    try:
-        paths, _missing, _is_explicit = resolve_plugins_for_cli(None, DEFAULT_ESM)
-    except FileNotFoundError:
-        paths = []
+    paths: list[Path] = []
+    if explicit_plugin_paths:
+        paths, _missing, _is_explicit = resolve_plugins_for_cli(
+            explicit_plugin_paths, explicit_plugin_paths[0]
+        )
+        source = PluginSourceState(mode="explicit-plugin-list", primary_esm=paths[0])
+    else:
+        env_paths = _env_plugin_paths()
+        if env_paths:
+            paths, _missing, _is_explicit = resolve_plugins_for_cli(env_paths, env_paths[0])
+            source = PluginSourceState(mode="env-plugin-list", primary_esm=paths[0])
+        else:
+            for candidate in _default_esm_candidates():
+                try:
+                    paths, _missing, _is_explicit = resolve_plugins_for_cli(None, candidate)
+                    break
+                except FileNotFoundError:
+                    continue
 
     if paths:
         plugin_datas = load_plugin_bytes(paths)
-        source = PluginSourceState(mode="default-vanilla-order", primary_esm=paths[0])
+        if source.mode == "defaults":
+            source = PluginSourceState(mode="default-vanilla-order", primary_esm=paths[0])
+        game_variant = detect_game_variant(paths, plugin_dir=paths[0].parent)
 
     if not plugin_datas:
         gmst = GameSettings.defaults()
@@ -172,6 +240,8 @@ def bootstrap_default_session() -> tuple[BuildSession, UiState]:
         build_name="Untitled Build",
         target_level=engine.state.target_level,
         max_level=engine.max_level,
+        game_variant=game_variant,
+        banner_title=banner_title_for_game(game_variant),
         plugin_source=source,
     )
     return BuildSession(

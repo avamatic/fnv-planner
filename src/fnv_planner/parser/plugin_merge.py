@@ -34,6 +34,10 @@ LEVEL_CAP_DLCS: tuple[str, ...] = (
     "LonesomeRoad.esm",
 )
 
+GAME_FALLOUT_3 = "fallout-3"
+GAME_FALLOUT_NV = "fallout-nv"
+GAME_TTW = "ttw"
+
 
 def is_missing_grup_error(exc: Exception) -> bool:
     msg = str(exc)
@@ -124,6 +128,38 @@ def has_non_base_level_cap_override(
         if path.name.lower() != "falloutnv.esm":
             return True
     return False
+
+
+def detect_game_variant(
+    plugin_paths: Iterable[Path],
+    *,
+    plugin_dir: Path | None = None,
+) -> str:
+    """Infer game variant from loaded plugin names and optional data directory."""
+    names = {p.name.lower() for p in plugin_paths}
+    if plugin_dir is not None:
+        names.update(p.name.lower() for p in plugin_dir.glob("*.esm"))
+        names.update(p.name.lower() for p in plugin_dir.glob("*.esp"))
+
+    has_nv = "falloutnv.esm" in names
+    has_fo3 = "fallout3.esm" in names
+    has_ttw = "taleoftwowastelands.esm" in names or "ttw.esm" in names
+
+    if has_ttw or (has_nv and has_fo3):
+        return GAME_TTW
+    if has_fo3:
+        return GAME_FALLOUT_3
+    if has_nv:
+        return GAME_FALLOUT_NV
+    return GAME_FALLOUT_NV
+
+
+def banner_title_for_game(game_variant: str) -> str:
+    if game_variant == GAME_TTW:
+        return "Tee Tee Double UWU"
+    if game_variant == GAME_FALLOUT_3:
+        return "FO3 Planner"
+    return "FNV Planner"
 
 
 def parse_records_merged(

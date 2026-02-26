@@ -3,7 +3,12 @@ from pathlib import Path
 
 from fnv_planner.models.game_settings import GameSettings
 from fnv_planner.parser.plugin_merge import (
+    GAME_FALLOUT_3,
+    GAME_FALLOUT_NV,
+    GAME_TTW,
     VANILLA_PLUGIN_ORDER,
+    banner_title_for_game,
+    detect_game_variant,
     default_vanilla_plugins,
     effective_vanilla_level_cap,
     has_non_base_level_cap_override,
@@ -137,3 +142,36 @@ def test_has_non_base_level_cap_override_detects_non_base(monkeypatch):
     )
     paths = [Path("FalloutNV.esm"), Path("MyMod.esp")]
     assert has_non_base_level_cap_override(paths, [b"base", b"mod"]) is True
+
+
+def test_detect_game_variant_fallout_nv():
+    variant = detect_game_variant([Path("FalloutNV.esm"), Path("DeadMoney.esm")])
+    assert variant == GAME_FALLOUT_NV
+
+
+def test_detect_game_variant_fallout_3():
+    variant = detect_game_variant([Path("Fallout3.esm"), Path("Anchorage.esm")])
+    assert variant == GAME_FALLOUT_3
+
+
+def test_detect_game_variant_ttw_from_plugin_names():
+    variant = detect_game_variant(
+        [Path("FalloutNV.esm"), Path("Fallout3.esm"), Path("TaleOfTwoWastelands.esm")]
+    )
+    assert variant == GAME_TTW
+
+
+def test_detect_game_variant_ttw_from_plugin_dir(tmp_path):
+    data_dir = tmp_path / "Data"
+    data_dir.mkdir()
+    (data_dir / "FalloutNV.esm").write_bytes(b"x")
+    (data_dir / "TaleOfTwoWastelands.esm").write_bytes(b"x")
+
+    variant = detect_game_variant([data_dir / "FalloutNV.esm"], plugin_dir=data_dir)
+    assert variant == GAME_TTW
+
+
+def test_banner_title_for_game_variant():
+    assert banner_title_for_game(GAME_TTW) == "Tee Tee Double UWU"
+    assert banner_title_for_game(GAME_FALLOUT_3) == "FO3 Planner"
+    assert banner_title_for_game(GAME_FALLOUT_NV) == "FNV Planner"

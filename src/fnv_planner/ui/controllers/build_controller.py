@@ -14,6 +14,7 @@ from fnv_planner.models.constants import (
     SPECIAL_INDICES,
 )
 from fnv_planner.models.derived_stats import CharacterStats
+from fnv_planner.models.item import Armor, Weapon
 from fnv_planner.models.perk import Perk
 from fnv_planner.optimizer.planner import plan_build
 from fnv_planner.optimizer.planner import _infer_perk_skill_effects
@@ -24,7 +25,7 @@ from fnv_planner.ui.state import UiState
 
 @dataclass(slots=True)
 class PriorityRequest:
-    kind: str  # "actor_value" | "perk" | "trait" | "tagged_skill" | "max_skills"
+    kind: str  # "actor_value" | "perk" | "trait" | "tagged_skill" | "max_skills" | "max_crit" | "max_crit_damage" | "crit_damage_potential"
     actor_value: int | None = None
     operator: str = ">="
     value: int | None = None
@@ -51,6 +52,8 @@ class BuildController:
     linked_spell_stat_bonuses_by_form: dict[int, dict[int, float]]
     state: UiState
     av_descriptions_by_av: dict[int, str] = field(default_factory=dict)
+    armors_by_id: dict[int, Armor] = field(default_factory=dict)
+    weapons_by_id: dict[int, Weapon] = field(default_factory=dict)
     current_level: int = 1
     on_change: Callable[[], None] | None = None
     requests: list[PriorityRequest] | None = None
@@ -61,6 +64,7 @@ class BuildController:
     _last_skill_book_points_by_level: dict[int, dict[int, int]] = field(default_factory=dict)
     _last_perk_selection_reasons: dict[int, str] = field(default_factory=dict)
     _last_book_dependency_warning: str | None = None
+    _last_perk_request_statuses: dict[int, dict[str, str]] = field(default_factory=dict)
     _inferred_effects_by_id: dict[int, object] = field(default_factory=dict)
     quick_perk_preset_path: Path = Path("config/quick_perks.txt")
 
@@ -343,6 +347,138 @@ class BuildController:
             category = classify_perk(perk, self.challenge_perk_ids).name
             rows.append((perk.form_id, perk.name, category))
         return rows
+
+    @staticmethod
+    def _planner_failure_message(result) -> str:
+        if result.unmet_requirements:
+            return str(result.unmet_requirements[0])
+        if result.messages:
+            return str(result.messages[0])
+        return "Planner could not satisfy this combination."
+
+    def perk_request_statuses(
+        self,
+        perk_ids: list[int] | None = None,
+    ) -> dict[int, dict[str, str]]:
+        """Classify perks against request priorities.
+
+        Statuses:
+        - green: compatible with primary + secondary requests
+        - yellow: compatible with primary request, conflicts with secondary
+        - red: contradicts primary request
+        """
+        assert self.requests is not None
+        req_specs = self._requests_as_goal_specs()
+        primary_specs = req_specs[:1]
+
+        state = self.engine.state
+        start = StartingConditions(
+            name=state.name,
+            sex=state.sex,
+            special=dict(state.special),
+            tagged_skills=self._resolved_tagged_skills(state_tags=set(state.tagged_skills)),
+            traits=self._requested_traits(),
+            equipment=dict(state.equipment),
+            target_level=self.engine.max_level,
+        )
+
+        if perk_ids is None:
+            candidate_ids = [int(pid) for pid in self.perks]
+        else:
+            candidate_ids = [int(pid) for pid in perk_ids]
+        if not candidate_ids:
+            return {}
+        missing = [int(pid) for pid in candidate_ids if int(pid) not in self._last_perk_request_statuses]
+        if not missing:
+            return {
+                int(pid): dict(self._last_perk_request_statuses[int(pid)])
+                for pid in candidate_ids
+            }
+
+        out: dict[int, dict[str, str]] = {}
+
+        for perk_id in missing:
+            i_perk_id = int(perk_id)
+            if i_perk_id not in self.perks:
+                out[i_perk_id] = {"status": "red", "reason": "Unknown perk."}
+                continue
+
+            probe_perk = RequirementSpec(
+                kind="perk",
+                priority=1_000_000,
+                reason="Perk picker probe",
+                perk_id=i_perk_id,
+                perk_rank=1,
+            )
+            full_goal = GoalSpec(
+                required_perks=[],
+                requirements=[probe_perk, *req_specs],
+                skill_books_by_av=dict(self.skill_books_by_av),
+                target_level=self.engine.max_level,
+                maximize_skills=True,
+                fill_perk_slots=True,
+            )
+            full_result = plan_build(
+                self.engine,
+                full_goal,
+                starting=start,
+                perks_by_id=self.perks,
+                challenge_perk_ids=self.challenge_perk_ids,
+                linked_spell_names_by_form=self.linked_spell_names_by_form,
+                linked_spell_stat_bonuses_by_form=self.linked_spell_stat_bonuses_by_form,
+                armors_by_id=self.armors_by_id,
+                weapons_by_id=self.weapons_by_id,
+            )
+            if full_result.success:
+                out[i_perk_id] = {
+                    "status": "green",
+                    "reason": "Compatible with primary and secondary requests.",
+                }
+                continue
+
+            if not primary_specs:
+                out[i_perk_id] = {
+                    "status": "yellow",
+                    "reason": self._planner_failure_message(full_result),
+                }
+                continue
+
+            primary_goal = GoalSpec(
+                required_perks=[],
+                requirements=[probe_perk, *primary_specs],
+                skill_books_by_av=dict(self.skill_books_by_av),
+                target_level=self.engine.max_level,
+                maximize_skills=True,
+                fill_perk_slots=True,
+            )
+            primary_result = plan_build(
+                self.engine,
+                primary_goal,
+                starting=start,
+                perks_by_id=self.perks,
+                challenge_perk_ids=self.challenge_perk_ids,
+                linked_spell_names_by_form=self.linked_spell_names_by_form,
+                linked_spell_stat_bonuses_by_form=self.linked_spell_stat_bonuses_by_form,
+                armors_by_id=self.armors_by_id,
+                weapons_by_id=self.weapons_by_id,
+            )
+            if primary_result.success:
+                out[i_perk_id] = {
+                    "status": "yellow",
+                    "reason": self._planner_failure_message(full_result),
+                }
+            else:
+                out[i_perk_id] = {
+                    "status": "red",
+                    "reason": self._planner_failure_message(primary_result),
+                }
+        for perk_id, status in out.items():
+            self._last_perk_request_statuses[int(perk_id)] = dict(status)
+
+        return {
+            int(pid): dict(self._last_perk_request_statuses[int(pid)])
+            for pid in candidate_ids
+        }
 
     def selected_perk_ids(self) -> set[int]:
         assert self.requests is not None
@@ -652,6 +788,80 @@ class BuildController:
         self._sync_state()
         self._notify_changed()
 
+    def add_max_crit_request(self) -> None:
+        assert self.requests is not None
+        existing = any(r.kind == "max_crit" for r in self.requests)
+        if existing:
+            return
+        self.requests.append(
+            PriorityRequest(
+                kind="max_crit",
+                reason="Maximize critical chance bonuses",
+            )
+        )
+        self._recompute_plan()
+        self._sync_state()
+        self._notify_changed()
+
+    def add_max_crit_damage_request(self) -> None:
+        assert self.requests is not None
+        existing = any(r.kind == "max_crit_damage" for r in self.requests)
+        if existing:
+            return
+        self.requests.append(
+            PriorityRequest(
+                kind="max_crit_damage",
+                reason="Maximize critical damage potential",
+            )
+        )
+        self._recompute_plan()
+        self._sync_state()
+        self._notify_changed()
+
+    def add_crit_damage_potential_request(
+        self,
+        value: int,
+        operator: str = ">=",
+        reason: str = "",
+    ) -> tuple[bool, str | None]:
+        assert self.requests is not None
+        self.requests.append(
+            PriorityRequest(
+                kind="crit_damage_potential",
+                operator=operator,
+                value=int(value),
+                reason=reason.strip() or "Crit damage potential request",
+            )
+        )
+        self._recompute_plan()
+        self._sync_state()
+        self._notify_changed()
+        return True, None
+
+    def set_meta_request_enabled(self, kind: str, enabled: bool) -> None:
+        assert self.requests is not None
+        if kind not in {"max_skills", "max_crit", "max_crit_damage"}:
+            raise ValueError(f"Unsupported meta request kind: {kind}")
+        existing_indices = [i for i, req in enumerate(self.requests) if req.kind == kind]
+        if enabled:
+            if existing_indices:
+                return
+            if kind == "max_skills":
+                self.add_max_skills_request()
+            elif kind == "max_crit":
+                self.add_max_crit_request()
+            else:
+                self.add_max_crit_damage_request()
+            return
+
+        if not existing_indices:
+            return
+        for idx in reversed(existing_indices):
+            del self.requests[idx]
+        self._recompute_plan()
+        self._sync_state()
+        self._notify_changed()
+
     def priority_request_rows(self) -> list[tuple[int, str]]:
         assert self.requests is not None
         rows: list[tuple[int, str]] = []
@@ -671,10 +881,36 @@ class BuildController:
                 text = f"Tagged Skill: {skill_name} [{req.reason}]"
             elif req.kind == "max_skills":
                 text = f"Max Skills: all skills to 100 [{req.reason}]"
+            elif req.kind == "max_crit":
+                text = f"Max Crit: prioritize crit-bonus perks [{req.reason}]"
+            elif req.kind == "max_crit_damage":
+                text = f"Max Crit Dmg: prioritize crit-damage potential [{req.reason}]"
+            elif req.kind == "crit_damage_potential":
+                text = f"Crit Dmg Potential {req.operator} {req.value} [{req.reason}]"
             else:
                 text = f"Unknown request [{req.reason}]"
             rows.append((idx, text))
         return rows
+
+    def priority_request_payloads(self) -> list[dict[str, int | str | None]]:
+        assert self.requests is not None
+        out: list[dict[str, int | str | None]] = []
+        for idx, req in enumerate(self.requests):
+            out.append(
+                {
+                    "index": int(idx),
+                    "kind": str(req.kind),
+                    "actor_value": int(req.actor_value) if req.actor_value is not None else None,
+                    "operator": str(req.operator),
+                    "value": int(req.value) if req.value is not None else None,
+                    "perk_id": int(req.perk_id) if req.perk_id is not None else None,
+                    "perk_rank": int(req.perk_rank),
+                    "trait_id": int(req.trait_id) if req.trait_id is not None else None,
+                    "tagged_skill_av": int(req.tagged_skill_av) if req.tagged_skill_av is not None else None,
+                    "reason": str(req.reason),
+                }
+            )
+        return out
 
     def move_priority_request(self, index: int, delta: int) -> None:
         assert self.requests is not None
@@ -742,6 +978,8 @@ class BuildController:
     def selected_perks_rows(self) -> list[tuple[str, int, str]]:
         direct_requested = self.selected_perk_ids()
         has_max_skills = any(r.kind == "max_skills" for r in self.requests or [])
+        has_max_crit = any(r.kind == "max_crit" for r in self.requests or [])
+        has_max_crit_damage = any(r.kind == "max_crit_damage" for r in self.requests or [])
         rows: list[tuple[str, int, str]] = []
         for level in sorted(self.engine.state.level_plans):
             plan = self.engine.state.level_plans[level]
@@ -752,6 +990,10 @@ class BuildController:
             name = perk.name if perk is not None else f"{perk_id:#x}"
             if perk_id in direct_requested:
                 source = "Direct request"
+            elif has_max_crit_damage:
+                source = "Auto (Max Crit Dmg)"
+            elif has_max_crit:
+                source = "Auto (Max Crit)"
             elif has_max_skills:
                 source = "Auto (Max Skills)"
             else:
@@ -770,6 +1012,7 @@ class BuildController:
     def _recompute_plan(self) -> None:
         assert self.requests is not None
         state = self.engine.state
+        self._last_perk_request_statuses = {}
         requested_traits = self._requested_traits()
         tagged_skills = self._resolved_tagged_skills(state_tags=set(state.tagged_skills))
         start = StartingConditions(
@@ -788,7 +1031,7 @@ class BuildController:
             skill_books_by_av=dict(self.skill_books_by_av),
             target_level=self.engine.max_level,
             maximize_skills=True,
-            fill_perk_slots=False,
+            fill_perk_slots=True,
         )
         result = plan_build(
             self.engine,
@@ -798,6 +1041,8 @@ class BuildController:
             challenge_perk_ids=self.challenge_perk_ids,
             linked_spell_names_by_form=self.linked_spell_names_by_form,
             linked_spell_stat_bonuses_by_form=self.linked_spell_stat_bonuses_by_form,
+            armors_by_id=self.armors_by_id,
+            weapons_by_id=self.weapons_by_id,
         )
         self.engine.replace_state(result.state)
         self._last_skill_books_used = dict(result.skill_books_used)
@@ -867,6 +1112,8 @@ class BuildController:
             challenge_perk_ids=self.challenge_perk_ids,
             linked_spell_names_by_form=self.linked_spell_names_by_form,
             linked_spell_stat_bonuses_by_form=self.linked_spell_stat_bonuses_by_form,
+            armors_by_id=self.armors_by_id,
+            weapons_by_id=self.weapons_by_id,
         )
         deficit_points = self._extract_max_skills_gap_points(no_books.unmet_requirements)
         books_needed = sum(int(v) for v in result.skill_books_used.values())
@@ -930,6 +1177,32 @@ class BuildController:
                         kind="max_skills",
                         priority=priority,
                         reason=req.reason,
+                    )
+                )
+            elif req.kind == "max_crit":
+                specs.append(
+                    RequirementSpec(
+                        kind="max_crit",
+                        priority=priority,
+                        reason=req.reason,
+                    )
+                )
+            elif req.kind == "max_crit_damage":
+                specs.append(
+                    RequirementSpec(
+                        kind="max_crit_damage",
+                        priority=priority,
+                        reason=req.reason,
+                    )
+                )
+            elif req.kind == "crit_damage_potential":
+                specs.append(
+                    RequirementSpec(
+                        kind="crit_damage_potential",
+                        priority=priority,
+                        reason=req.reason,
+                        operator=req.operator,
+                        value=req.value,
                     )
                 )
         return specs

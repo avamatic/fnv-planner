@@ -19,4 +19,6 @@ class UiState:
     build_name: str = "Untitled Build"
     target_level: int = 1
     max_level: int = 1
+    game_variant: str = "fallout-nv"
+    banner_title: str = "FNV Planner"
     plugin_source: PluginSourceState = field(default_factory=PluginSourceState)
