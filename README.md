@@ -1,6 +1,27 @@
-# fnv-planner — Fallout: New Vegas Character Build Optimizer
 
-## Overview
+
+A mod-aware graph-optimization build planner for FNV, FO3, and TTW.
+Treats different forms of data in the game (A weapon, a perk, a quest, a skill value at a specific time, DPS) as nodes in a dependency graph.
+The goal is to map out as many important relationships between information in the game,
+Organized in such a way that it can be algorithmically searched for arbitrary goals.
+
+Whenever possible the program is data-driven. We take every measure we can to avoid hard-coding or making lists of game mechanics. There are some that unfortunately are beyond our ability to parse, but the dream of a completely stateless FNV optimizer lives on in our mechanical hearts.
+
+There are many existing tools for parsing the game data of FNV, and there is an enormous amount of documentation on how the game works. This is possibly the best project for agentic coding.
+
+
+We will start by learning to parse as many types of cleanly described information as possible. We will start with the very basics, things like the special values, or traits and perks. Then from there we will work on understanding gear, armor, weapons, and other items. From there, once we have a soli foundation in the unambiguous, we will move on to taking complicated information like "you must have such and such goodwill with caesars legion and have not done these certain things in order to access the safe house where the lucky shades are stored." That is where the compromises on being data driven will likely become impossible to ignore. 
+
+Small notes:
+The dps shown in game is not a sufficient measure of real performance. It does not consider missing, or stuns, and it does not include the effect of critical hits in the overall damage profile. It also does not fully consider the impact of gear and perks, which can be additively complex. That is why we are including a damage simulator. Based on the ideas of simulation craft, but as similar as an ant is to an elephant. FNV mechanics are significantly simpler and likely will not require and action lists.
+
+The lucky shades are an important item in my view for criticism based characters. The ability to increase luck by one functionally permanently frees up a special point for the rest of the build. Also, I think the lucky shades are a cool way to capture some of the more interesting aspects of a node based char buildar.
+Lets say that grit chance 20 its determined by the sim to be optimal. That becomes a terminal goal. Then everything that increases critical becomes a secondary goal. A feeder goal. From there a particular item, the lucky shades becomes a tertiary goal. The shades don't directly help with increasing luck, because we could just take 10 luck at char creation, but that would hurt the rest of our build, and possibly even our damage. So the shades become helpful in a roundabout way that benefits many parts of the build, and may even string back directly to increasing crit by allowing an additional per to be taken somewhere else. The beauty I'm searching for is finding out the unseen connections between different pieces of information. This will be especially true I believe in mod packs. Vanilla new Vegas is a largely solved game, but modpackt often deliberately try to shake the player out of their expectations and ask us to complete different puzzles and connect pieces of information in different ways.
+
+
+
+
+
 A mod-aware character build planner and optimizer for Fallout: New Vegas. Treats perks like packages with dependencies (SPECIAL stats, skills, challenges, quests) and helps you plan optimal builds level by level.
 The current UI is a cross-platform web frontend centered on a **priority-request** workflow: you describe target outcomes (stats/skills/perks/traits/max-skills), order them by priority, and the planner computes a full build to max level.
 
